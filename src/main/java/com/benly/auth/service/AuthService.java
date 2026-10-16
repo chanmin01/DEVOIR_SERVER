@@ -50,9 +50,6 @@ public class AuthService {
     }
 
     private UserResolution resolveExisting(User user) {
-        if (user.isDeleted()) {
-            user.restore();
-        }
         return new UserResolution(user, false);
     }
 

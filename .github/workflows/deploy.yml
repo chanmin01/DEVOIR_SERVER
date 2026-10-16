@@ -57,7 +57,8 @@ jobs:
               "S3_BUCKET=$(aws ssm get-parameter --name /benly/prod/s3-bucket --query Parameter.Value --output text --region ap-northeast-2)",
               "CLAUDE_API_KEY=$(aws ssm get-parameter --name /benly/prod/claude-api-key --with-decryption --query Parameter.Value --output text --region ap-northeast-2)",
               "OPENAI_API_KEY=$(aws ssm get-parameter --name /benly/prod/openai-api-key --with-decryption --query Parameter.Value --output text --region ap-northeast-2)",
-              "docker run -d -p 8080:8080 --name benly --log-driver=awslogs -e SPRING_PROFILES_ACTIVE=prod --log-opt awslogs-region=ap-northeast-2 --log-opt awslogs-group=/benly/prod/app --log-opt awslogs-create-group=true --log-opt awslogs-stream=benly -e JWT_SECRET=\"$JWT_SECRET\" -e DB_URL=\"$DB_URL\" -e DB_PASSWORD=\"$DB_PASSWORD\" -e KAKAO_CLIENT_ID=\"$KAKAO_CLIENT_ID\" -e S3_BUCKET=\"$S3_BUCKET\" -e CLAUDE_API_KEY=\"$CLAUDE_API_KEY\" -e OPENAI_API_KEY=\"$OPENAI_API_KEY\" 421085493505.dkr.ecr.ap-northeast-2.amazonaws.com/benly-backend:latest"
+              "KAKAO_ADMIN_KEY=$(aws ssm get-parameter --name /benly/prod/kakao-admin-key --with-decryption --query Parameter.Value --output text --region ap-northeast-2)",
+              "docker run -d -p 8080:8080 --name benly --log-driver=awslogs -e SPRING_PROFILES_ACTIVE=prod --log-opt awslogs-region=ap-northeast-2 --log-opt awslogs-group=/benly/prod/app --log-opt awslogs-create-group=true --log-opt awslogs-stream=benly -e JWT_SECRET=\"$JWT_SECRET\" -e DB_URL=\"$DB_URL\" -e DB_PASSWORD=\"$DB_PASSWORD\" -e KAKAO_CLIENT_ID=\"$KAKAO_CLIENT_ID\" -e S3_BUCKET=\"$S3_BUCKET\" -e CLAUDE_API_KEY=\"$CLAUDE_API_KEY\" -e OPENAI_API_KEY=\"$OPENAI_API_KEY\" -e KAKAO_ADMIN_KEY=\"$KAKAO_ADMIN_KEY\" 421085493505.dkr.ecr.ap-northeast-2.amazonaws.com/benly-backend:latest"
             ]}' \
             --region ap-northeast-2 \
             --query "Command.CommandId" --output text)
