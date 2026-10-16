@@ -40,4 +40,10 @@ public class User extends BaseEntity {
     public void changeNickname(String nickname) {
         this.nickname = nickname;
     }
+
+    public void withdraw() {
+        this.kakaoId = "deleted_" + this.id;
+        this.nickname = "탈퇴한 사용자";
+        softDelete();
+    }
 }

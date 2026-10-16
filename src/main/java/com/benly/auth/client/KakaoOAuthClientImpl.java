@@ -25,6 +25,7 @@ public class KakaoOAuthClientImpl implements KakaoOAuthClient {
     private final String tokenUri;
     private final String userInfoUri;
     private final String clientSecret;
+    private final String adminKey;
 
     public KakaoOAuthClientImpl(
             RestClient restClient,
@@ -32,7 +33,8 @@ public class KakaoOAuthClientImpl implements KakaoOAuthClient {
             @Value("${kakao.redirect-uri}") String redirectUri,
             @Value("${kakao.token-uri}") String tokenUri,
             @Value("${kakao.user-info-uri}") String userInfoUri,
-            @Value("${kakao.client-secret:}") String clientSecret
+            @Value("${kakao.client-secret:}") String clientSecret,
+            @Value("${kakao.admin-key:}") String adminKey
     ) {
         this.restClient = restClient;
         this.clientId = clientId;
@@ -40,6 +42,8 @@ public class KakaoOAuthClientImpl implements KakaoOAuthClient {
         this.tokenUri = tokenUri;
         this.userInfoUri = userInfoUri;
         this.clientSecret = clientSecret;
+        this.adminKey = adminKey;
+
     }
 
     public KakaoUserInfo getKakaoUser(String authorizationCode) {
@@ -104,6 +108,23 @@ public class KakaoOAuthClientImpl implements KakaoOAuthClient {
                 .header("Authorization", "Bearer " + accessToken)
                 .retrieve()
                 .body(KakaoUserResponse.class);
+    }
+
+    @Override
+    public void unlink(String kakaoId) {
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("target_id_type", "user_id");
+        form.add("target_id", kakaoId);
+
+        restClient.post()
+                .uri("https://kapi.kakao.com/v1/user/unlink")
+                .header("Authorization", "KakaoAK " + adminKey)
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(form)
+                .retrieve()
+                .toBodilessEntity();
+
+        log.info("[KAKAO] unlink 완료 kakaoId={}", kakaoId);
     }
 
 

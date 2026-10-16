@@ -121,29 +121,26 @@ public class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("탈퇴한 유저가 다시 로그인하면 계정이 복구되고 isNewUser는 false다")
-    void withdrawnUserReloginRestoresAccount() {
-        // given
-        User withdrawnUser = User.of("12345", "홍길동");
-        withdrawnUser.softDelete();
-
+    @DisplayName("탈퇴 후 같은 카카오 계정으로 로그인하면 신규 가입되고 isNewUser는 true다")
+    void withdrawnUserReloginRegistersAsNew() {
+        // given: 탈퇴 시 kakaoId가 바뀌어 기존 계정이 조회되지 않음
+        User newUser = User.of("12345", "홍길동");
         given(kakaoOAuthClient.getKakaoUser("code"))
                 .willReturn(new KakaoUserInfo("12345", "홍길동"));
-        given(userRepository.findByKakaoId("12345"))
-                .willReturn(Optional.of(withdrawnUser));
-        given(userRepository.findByIdForUpdate(any()))
-                .willReturn(Optional.of(withdrawnUser));   // 로그인 시 유저 행 잠금
+        given(userRepository.findByKakaoId("12345")).willReturn(Optional.empty());
+        given(userRegistrationService.register(any(KakaoUserInfo.class), anyBoolean()))
+                .willReturn(newUser);
+        given(userRepository.findByIdForUpdate(any())).willReturn(Optional.of(newUser));
         given(jwtProvider.createAccessToken(any())).willReturn("access-token");
         given(jwtProvider.createRefreshToken(any())).willReturn("refresh-token");
-        given(jwtProvider.getRefreshTokenExpiry())
-                .willReturn(LocalDateTime.now().plusWeeks(2));
+        given(jwtProvider.getRefreshTokenExpiry()).willReturn(LocalDateTime.now().plusWeeks(2));
 
         // when
         KakaoLoginResponse response = authService.kakaoLogin(new KakaoLoginRequest("code", true));
 
         // then
-        assertThat(withdrawnUser.isDeleted()).isFalse();
-        assertThat(response.isNewUser()).isFalse();
+        assertThat(response.isNewUser()).isTrue();
+        verify(userRegistrationService).register(any(KakaoUserInfo.class), anyBoolean());
     }
 
     @Test
