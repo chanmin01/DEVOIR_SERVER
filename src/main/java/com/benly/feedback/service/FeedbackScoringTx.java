@@ -72,7 +72,10 @@ public class FeedbackScoringTx {
         tqs.sort(Comparator.comparing(Question::getSeq));
 
         List<TailInput> tails = tqs.stream()
-                .map(t -> new TailInput(t.getStrategy(), t.getContent(), transcripts.get(t.getId())))
+                .map(t -> new TailInput(
+                        t.getStrategy() == null ? null : t.getStrategy().getLabel(),
+                        t.getContent(),
+                        transcripts.get(t.getId())))
                 .toList();
 
         return new MainQuestionInput(

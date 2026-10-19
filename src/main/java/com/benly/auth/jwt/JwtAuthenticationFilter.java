@@ -1,5 +1,6 @@
 package com.benly.auth.jwt;
 
+import com.benly.user.entity.UserType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.ExpiredJwtException;
 import jakarta.servlet.FilterChain;
@@ -9,12 +10,12 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.NonNull;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -22,6 +23,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String AUTH_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
+    private static final String ROLE_PREFIX = "ROLE_";
 
     private final JwtProvider jwtProvider;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -29,7 +31,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
     private static final List<String> EXCLUDED_PATHS = List.of(
             "/api/v1/auth/kakao/login",
-            "/api/v1/auth/token/refresh"
+            "/api/v1/auth/token/refresh",
+            "/api/v1/auth/guest"      // 만료된 게스트 토큰을 들고 재발급하러 오므로 제외
     );
 
     public JwtAuthenticationFilter(JwtProvider jwtProvider) {
@@ -49,12 +52,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             if (token != null && jwtProvider.isValid(token)) {
                 Long userId = jwtProvider.getUserId(token);
+                UserType userType = jwtProvider.getUserType(token);
 
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(
                                 userId,
                                 null,
-                                Collections.emptyList()
+                                // ROLE_GUEST / ROLE_MEMBER → SecurityConfig의 hasRole로 분기
+                                List.of(new SimpleGrantedAuthority(ROLE_PREFIX + userType.name()))
                         );
 
                 SecurityContextHolder.getContext().setAuthentication(authentication);

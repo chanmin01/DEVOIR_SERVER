@@ -18,6 +18,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import com.benly.question.dto.FollowUpResult;
+import com.benly.question.entity.FollowUpStrategy;
 
 import java.util.List;
 import java.util.Optional;
@@ -107,35 +109,68 @@ public class AnswerCommandService {
     }
 
     @Transactional(readOnly = true)
-    public int countFollowUps(Question mainQuestion) {
-        return questionRepository.countByParent(mainQuestion);
+    public int countFollowUps(Long mainQuestionId) {
+        return questionRepository.countByParentId(mainQuestionId);
     }
 
+    /**
+     * open-in-view 가 꺼져 있으므로 호출부의 LAZY 프록시를 그대로 받으면
+     * 여기서 LazyInitializationException 이 난다. ID 를 받아 이 트랜잭션에서 다시 조회한다.
+     */
     @Transactional(readOnly = true)
-    public String buildContext(Question mainQuestion) {
+    public String buildContext(Long mainQuestionId) {
+        Question mainQuestion = questionRepository.findById(mainQuestionId)
+                .orElseThrow(() -> new BusinessException(AnswerErrorCode.QUESTION_NOT_FOUND));
+
         StringBuilder sb = new StringBuilder();
 
         // 메인 질문 + 답변
         sb.append("메인 질문: ").append(mainQuestion.getContent()).append("\n");
-        answerRepository.findByQuestionId(mainQuestion.getId())
-                .ifPresent(a -> sb.append("답변: ").append(a.getTranscript()).append("\n"));
+        sb.append("답변: ").append(transcriptOrPlaceholder(mainQuestion.getId())).append("\n");
 
-        // 꼬리질문들 + 답변
+        // 꼬리질문들 + 답변 (어떤 전략을 이미 썼는지 모델이 알 수 있게 함께 노출)
         List<Question> followUps = questionRepository.findByParentOrderBySeqAsc(mainQuestion);
         for (Question fu : followUps) {
-            sb.append("꼬리질문: ").append(fu.getContent()).append("\n");
-            answerRepository.findByQuestionId(fu.getId())
-                    .ifPresent(a -> sb.append("답변: ").append(a.getTranscript()).append("\n"));
+            sb.append("꼬리질문");
+            if (fu.getStrategy() != null) {
+                sb.append("(").append(fu.getStrategy().getLabel()).append(")");
+            }
+            sb.append(": ").append(fu.getContent()).append("\n");
+            sb.append("답변: ").append(transcriptOrPlaceholder(fu.getId())).append("\n");
         }
 
         return sb.toString();
     }
 
+    /**
+     * 스킵은 Answer 행이 존재하고 transcript 만 null 이다.
+     * 그대로 append 하면 프롬프트에 문자열 "null" 이 섞여 들어간다.
+     */
+    private String transcriptOrPlaceholder(Long questionId) {
+        return answerRepository.findByQuestionId(questionId)
+                .map(a -> (a.getTranscript() == null || a.getTranscript().isBlank())
+                        ? "(건너뜀)" : a.getTranscript())
+                .orElse("(미응답)");
+    }
+
+    @Transactional(readOnly = true)
+    public List<FollowUpStrategy> usedStrategies(Long mainQuestionId) {
+        return questionRepository.findStrategiesByParentId(mainQuestionId);
+    }
+
     // 꼬리질문 생성 시 에러가 나도 기존 답변 롤백을 방지하기 위해 완전히 분리된 트랜잭션 사용 (REQUIRES_NEW)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public AnswerResponse.NextAction saveFollowUpQuestion(Session session, Question mainQuestion, int followUpSeq, String content) {
+    public AnswerResponse.NextAction saveFollowUpQuestion(Long sessionId, Long mainQuestionId,
+                                                          int followUpSeq, FollowUpResult result) {
+        // 새 트랜잭션에서 영속 상태로 다시 조회 (decideNextMainOrFinish 와 같은 패턴)
+        Session session = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new BusinessException(AnswerErrorCode.QUESTION_SESSION_MISMATCH));
+        Question mainQuestion = questionRepository.findById(mainQuestionId)
+                .orElseThrow(() -> new BusinessException(AnswerErrorCode.QUESTION_NOT_FOUND));
+
         Question followUp = Question.createFollowUp(
-                session, mainQuestion, followUpSeq, content, QuestionSourceType.CLAUDE);
+                session, mainQuestion, followUpSeq,
+                result.question(), result.strategy(), QuestionSourceType.CLAUDE);
         Question savedFollowUp = questionRepository.save(followUp);
 
         return AnswerResponse.NextAction.of(NextActionType.FOLLOW_UP, savedFollowUp.getId());

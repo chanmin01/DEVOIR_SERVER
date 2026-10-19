@@ -24,8 +24,10 @@ public class Question extends BaseTimeEntity {
     @Column(name = "type", nullable = false, length = 20)
     private String type;
 
+    /** 꼬리질문일 때만 채워진다. 메인은 null. */
+    @Enumerated(EnumType.STRING)
     @Column(name = "strategy", length = 20)
-    private String strategy;
+    private FollowUpStrategy strategy;
 
     @Column(name = "seq", nullable = false)
     private Integer seq;
@@ -45,8 +47,8 @@ public class Question extends BaseTimeEntity {
     private QuestionSourceType sourceType; //CLAUDE / SEED
 
 
-    private Question(Session session, Question parent, String type, String strategy, Integer seq, String content, String shortTitle
-    , QuestionSourceType sourceType) {
+    private Question(Session session, Question parent, String type, FollowUpStrategy strategy,
+                     Integer seq, String content, String shortTitle, QuestionSourceType sourceType) {
         this.session = session;
         this.parent = parent;
         this.type = type;
@@ -62,8 +64,10 @@ public class Question extends BaseTimeEntity {
         return new Question(session, null, "MAIN", null, seq, content, null, sourceType);
     }
 
-    public static Question createFollowUp(Session session, Question parent, Integer seq, String content, QuestionSourceType sourceType) {
-        return new  Question(session, parent, "Follow_UP", null, seq, content, null, sourceType);
+    public static Question createFollowUp(Session session, Question parent, Integer seq,
+                                          String content, FollowUpStrategy strategy,
+                                          QuestionSourceType sourceType) {
+        return new Question(session, parent, "FOLLOW_UP", strategy, seq, content, null, sourceType);
     }
 
     /** 채점 시 카드 제목(요약)을 채운다. */
