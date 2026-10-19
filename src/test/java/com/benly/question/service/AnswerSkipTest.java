@@ -3,6 +3,8 @@ package com.benly.question.service;
 import com.benly.question.client.ClaudeClient;
 import com.benly.question.client.WhisperClient;
 import com.benly.question.dto.AnswerResponse;
+import com.benly.question.dto.FollowUpResult;
+import com.benly.question.entity.FollowUpStrategy;
 import com.benly.question.entity.Answer;
 import com.benly.question.entity.AnswerType;
 import com.benly.question.entity.NextActionType;
@@ -88,10 +90,11 @@ class AnswerSkipTest {
         given(answerCommandService.saveSkip(SESSION_ID, USER_ID, 200L)).willReturn(skip);
 
         // 꼬리1 스킵 시점: 꼬리 1개 (스킵된 꼬리1) → count=1 < 2 → 새 꼬리 생성
-        given(answerCommandService.countFollowUps(main)).willReturn(1);
-        given(answerCommandService.buildContext(main)).willReturn("맥락");
-        given(claudeClient.generateFollowUp(anyString())).willReturn("새 꼬리질문");
-        given(answerCommandService.saveFollowUpQuestion(any(), any(), anyInt(), anyString()))
+        given(answerCommandService.countFollowUps(100L)).willReturn(1);
+        given(answerCommandService.buildContext(100L)).willReturn("맥락");
+        given(claudeClient.generateFollowUp(anyString(), any(), any()))
+                .willReturn(new FollowUpResult("새 꼬리질문", FollowUpStrategy.WHY));
+        given(answerCommandService.saveFollowUpQuestion(any(), any(), anyInt(), any(FollowUpResult.class)))
                 .willReturn(AnswerResponse.NextAction.of(NextActionType.FOLLOW_UP, 201L));
 
         AnswerResponse response = answerService.skipQuestion(SESSION_ID, USER_ID, 200L);
@@ -117,7 +120,7 @@ class AnswerSkipTest {
         given(answerCommandService.saveSkip(SESSION_ID, USER_ID, 300L)).willReturn(skip);
 
         // 꼬리2 스킵 시점: 꼬리 2개 → count=2, 2 < 2 아님 → 다음 메인
-        given(answerCommandService.countFollowUps(main)).willReturn(2);
+        given(answerCommandService.countFollowUps(100L)).willReturn(2);
         given(answerCommandService.decideNextMainOrFinish(100L, SESSION_ID))
                 .willReturn(AnswerResponse.NextAction.of(NextActionType.NEXT_MAIN, 101L));
 

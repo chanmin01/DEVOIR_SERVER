@@ -1,5 +1,6 @@
 package com.benly.auth.jwt;
 
+import com.benly.user.entity.UserType;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,7 @@ public class JwtAuthenticationFilterTest {
         String token = "valid.token";
         when(jwtProvider.isValid(token)).thenReturn(true);
         when(jwtProvider.getUserId(token)).thenReturn(1L);
+        when(jwtProvider.getUserType(token)).thenReturn(UserType.MEMBER);
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer " + token);
@@ -43,6 +45,9 @@ public class JwtAuthenticationFilterTest {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         assertThat(auth).isNotNull();
         assertThat(auth.getPrincipal()).isEqualTo(1L);
+        assertThat(auth.getAuthorities())
+                .extracting("authority")
+                .containsExactly("ROLE_MEMBER");
     }
 
     @Test

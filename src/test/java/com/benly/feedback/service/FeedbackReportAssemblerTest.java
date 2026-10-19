@@ -6,6 +6,7 @@ import com.benly.feedback.dto.FeedbackContent.TailContent;
 import com.benly.feedback.dto.FeedbackReportResponse.Card;
 import com.benly.feedback.entity.Feedback;
 import com.benly.question.entity.Answer;
+import com.benly.question.entity.FollowUpStrategy;
 import com.benly.question.entity.Question;
 import com.benly.question.entity.QuestionSourceType;
 import com.benly.session.entity.Session;
@@ -42,7 +43,7 @@ class FeedbackReportAssemblerTest {
     }
 
     private Question tail(long id, Question parent, int seq, String content) {
-        Question q = Question.createFollowUp(session, parent, seq, content, QuestionSourceType.CLAUDE);
+        Question q = Question.createFollowUp(session, parent, seq, content, FollowUpStrategy.WHY, QuestionSourceType.CLAUDE);
         ReflectionTestUtils.setField(q, "id", id);
         return q;
     }
@@ -62,8 +63,8 @@ class FeedbackReportAssemblerTest {
                 "메인good", "메인weak", "메인next", "메인축",
                 new ImprovedAnswer("before", "after"),
                 List.of(
-                        new TailContent(null, "꼬리1good", "꼬리1weak", "꼬리1next", "꼬리1축", "꼬리1개선"),
-                        new TailContent(null, "꼬리2good", "꼬리2weak", "꼬리2next", "꼬리2축", "꼬리2개선")
+                        new TailContent("꼬리1good", "꼬리1weak", "꼬리1next", "꼬리1축", "꼬리1개선"),
+                        new TailContent("꼬리2good", "꼬리2weak", "꼬리2next", "꼬리2축", "꼬리2개선")
                 ));
         Feedback fb = Feedback.create(m, parser.toJson(content), 80);
 
@@ -93,7 +94,7 @@ class FeedbackReportAssemblerTest {
         Question t2 = tail(102L, m, 3, "꼬리2");
         FeedbackContent content = new FeedbackContent(
                 "g", "w", "n", "a", null,
-                List.of(new TailContent(null, "꼬리1good", "w", "n", "a", "i")));
+                List.of(new TailContent("꼬리1good", "w", "n", "a", "i")));
         Feedback fb = Feedback.create(m, parser.toJson(content), 70);
 
         // when

@@ -100,7 +100,7 @@ public class FeedbackReportAssembler {
             FeedbackContent.TailContent tc = (i < tailContents.size()) ? tailContents.get(i) : null;
 
             tails.add(new Tail(
-                    tq.getStrategy(),
+                    tq.getStrategy() == null ? null : tq.getStrategy().name(),
                     tq.getContent(),
                     transcriptOf(answerByQuestion.get(tq.getId())),
                     tc != null ? tc.good() : null,

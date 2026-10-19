@@ -72,14 +72,13 @@ public class FeedbackScoringClient {
         Map<String, Object> tailItemSchema = Map.of(
                 "type", "object",
                 "properties", Map.of(
-                        "strategy", Map.of("type", "string", "description", "꼬리질문 전략(원문 strategy 값 그대로)"),
                         "good", Map.of("type", "string", "description", "잘한 점"),
                         "weak", Map.of("type", "string", "description", "아쉬운 점"),
                         "next", Map.of("type", "string", "description", "다음에 개선할 방향"),
                         "weakAxis", Map.of("type", "string", "description", "가장 약한 축에 대한 한 문장 설명"),
                         "improvedAfter", Map.of("type", "string", "description", "개선된 모범 답변")
                 ),
-                "required", List.of("strategy", "good", "weak", "next", "weakAxis", "improvedAfter")
+                "required", List.of("good", "weak", "next", "weakAxis", "improvedAfter")
         );
 
         Map<String, Object> inputSchema = Map.of(
@@ -183,7 +182,6 @@ public class FeedbackScoringClient {
         List<FeedbackContent.TailContent> tails = new ArrayList<>();
         for (JsonNode t : in.path("tails")) {
             tails.add(new FeedbackContent.TailContent(
-                    text(t, "strategy"),
                     text(t, "good"),
                     text(t, "weak"),
                     text(t, "next"),
@@ -219,10 +217,10 @@ public class FeedbackScoringClient {
             int idx = 1;
             for (TailInput t : input.tails()) {
                 tailText.append("""
-                    [꼬리질문 %d]
+                    [꼬리질문 %d] 전략: %s
                     Q: %s
                     꼬리 답변: %s
-                    """.formatted(idx++, nvl(t.question()), nvl(t.answer())));
+                    """.formatted(idx++, nvl(t.strategy()), nvl(t.question()), nvl(t.answer())));
             }
         }
 
@@ -250,6 +248,8 @@ public class FeedbackScoringClient {
             - tails 배열의 각 항목은 '해당 꼬리질문의 답변'만 근거로 평가합니다. 다른 꼬리나 메인 답변의
               내용을 섞지 마세요(메인 질문은 맥락 파악용으로만 참고).
             - 단, axisScores(축 점수)만은 이 주제 전체(메인+꼬리)를 종합해 매깁니다.
+            - 각 꼬리질문에는 면접관이 의도한 '전략'이 붙어 있습니다(근거/심화/가정/행동/결과/회고).
+              해당 꼬리 답변을 평가할 때, 그 전략이 끌어내려 한 것을 지원자가 실제로 제시했는지를 기준으로 삼으세요.
 
             [평가축]
             %s

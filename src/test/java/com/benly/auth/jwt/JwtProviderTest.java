@@ -15,7 +15,8 @@ public class JwtProviderTest {
         jwtProvider = new JwtProvider(
                 "test-secret-key-for-jwt-must-be-at-least-32-bytes-long",
                 3600000L,
-                1209600000L
+                1209600000L,
+                21600000L
         );
         jwtProvider.init();
     }
