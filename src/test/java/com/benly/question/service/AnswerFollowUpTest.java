@@ -4,6 +4,8 @@ import com.benly.question.client.ClaudeClient;
 import com.benly.question.client.WhisperClient;
 import com.benly.question.dto.AnswerCreateRequest;
 import com.benly.question.dto.AnswerResponse;
+import com.benly.question.dto.FollowUpResult;
+import com.benly.question.entity.FollowUpStrategy;
 import com.benly.question.entity.Answer;
 import com.benly.question.entity.AnswerType;
 import com.benly.question.entity.NextActionType;
@@ -81,11 +83,12 @@ class AnswerFollowUpTest {
         Answer mockAnswer = mockSavedAnswer(mainQuestion, request.transcript(), "TEXT");
 
         given(answerCommandService.saveTextAnswer(SESSION_ID, USER_ID, request)).willReturn(mockAnswer);
-        given(answerCommandService.buildContext(mainQuestion)).willReturn("context");
-        given(claudeClient.generateFollowUp(anyString())).willReturn("꼬리질문입니다");
+        given(answerCommandService.buildContext(100L)).willReturn("context");
+        given(claudeClient.generateFollowUp(anyString(), any(), any()))
+                .willReturn(new FollowUpResult("꼬리질문입니다", FollowUpStrategy.WHY));
 
         AnswerResponse.NextAction mockNextAction = AnswerResponse.NextAction.of(NextActionType.FOLLOW_UP, 200L);
-        given(answerCommandService.saveFollowUpQuestion(session, mainQuestion, 1, "꼬리질문입니다"))
+        given(answerCommandService.saveFollowUpQuestion(eq(SESSION_ID), eq(100L), eq(1), any(FollowUpResult.class)))
                 .willReturn(mockNextAction);
 
         // when
@@ -102,6 +105,7 @@ class AnswerFollowUpTest {
         // given
         Session session = mockSession();
         Question mainQuestion = mock(Question.class);
+        given(mainQuestion.getId()).willReturn(100L);
         Question followUp1 = mock(Question.class);
         given(followUp1.getId()).willReturn(200L);
         given(followUp1.getParent()).willReturn(mainQuestion);
@@ -111,12 +115,13 @@ class AnswerFollowUpTest {
         Answer mockAnswer = mockSavedAnswer(followUp1, request.transcript(), "TEXT");
 
         given(answerCommandService.saveTextAnswer(SESSION_ID, USER_ID, request)).willReturn(mockAnswer);
-        given(answerCommandService.countFollowUps(mainQuestion)).willReturn(1);
-        given(answerCommandService.buildContext(mainQuestion)).willReturn("context");
-        given(claudeClient.generateFollowUp(anyString())).willReturn("꼬리질문2");
+        given(answerCommandService.countFollowUps(100L)).willReturn(1);
+        given(answerCommandService.buildContext(100L)).willReturn("context");
+        given(claudeClient.generateFollowUp(anyString(), any(), any()))
+                .willReturn(new FollowUpResult("꼬리질문2", FollowUpStrategy.DEEP));
 
         AnswerResponse.NextAction mockNextAction = AnswerResponse.NextAction.of(NextActionType.FOLLOW_UP, 300L);
-        given(answerCommandService.saveFollowUpQuestion(session, mainQuestion, 2, "꼬리질문2"))
+        given(answerCommandService.saveFollowUpQuestion(eq(SESSION_ID), eq(100L), eq(2), any(FollowUpResult.class)))
                 .willReturn(mockNextAction);
 
         // when
@@ -143,7 +148,7 @@ class AnswerFollowUpTest {
         Answer mockAnswer = mockSavedAnswer(followUp2, request.transcript(), "TEXT");
 
         given(answerCommandService.saveTextAnswer(SESSION_ID, USER_ID, request)).willReturn(mockAnswer);
-        given(answerCommandService.countFollowUps(mainQuestion)).willReturn(2);
+        given(answerCommandService.countFollowUps(100L)).willReturn(2);
 
         AnswerResponse.NextAction mockNextAction = AnswerResponse.NextAction.of(NextActionType.NEXT_MAIN, 101L);
 
@@ -174,7 +179,7 @@ class AnswerFollowUpTest {
         Answer mockAnswer = mockSavedAnswer(followUp2, request.transcript(), "TEXT");
 
         given(answerCommandService.saveTextAnswer(SESSION_ID, USER_ID, request)).willReturn(mockAnswer);
-        given(answerCommandService.countFollowUps(mainQuestion)).willReturn(2);
+        given(answerCommandService.countFollowUps(100L)).willReturn(2);
 
         AnswerResponse.NextAction mockNextAction = AnswerResponse.NextAction.of(NextActionType.FINISH, null);
 
@@ -203,8 +208,8 @@ class AnswerFollowUpTest {
         Answer mockAnswer = mockSavedAnswer(mainQuestion, request.transcript(), "TEXT");
 
         given(answerCommandService.saveTextAnswer(SESSION_ID, USER_ID, request)).willReturn(mockAnswer);
-        given(answerCommandService.buildContext(mainQuestion)).willReturn("context");
-        given(claudeClient.generateFollowUp(anyString())).willThrow(new RuntimeException("Claude 오류"));
+        given(answerCommandService.buildContext(100L)).willReturn("context");
+        given(claudeClient.generateFollowUp(anyString(), any(), any())).willThrow(new RuntimeException("Claude 오류"));
 
         AnswerResponse.NextAction mockNextAction = AnswerResponse.NextAction.of(NextActionType.NEXT_MAIN, 101L);
 
@@ -238,11 +243,13 @@ class AnswerFollowUpTest {
         Answer mockAnswer = mockSavedAnswer(main, transcribedText, "AUDIO");
         given(answerCommandService.saveAudioAnswer(SESSION_ID, USER_ID, 100L, transcribedText, durationSec)).willReturn(mockAnswer);
 
-        given(answerCommandService.buildContext(main)).willReturn("context");
-        given(claudeClient.generateFollowUp(anyString())).willReturn("꼬리질문");
+        given(answerCommandService.buildContext(100L)).willReturn("context");
+        given(claudeClient.generateFollowUp(anyString(), any(), any()))
+                .willReturn(new FollowUpResult("꼬리질문", FollowUpStrategy.WHY));
 
         AnswerResponse.NextAction mockNextAction = AnswerResponse.NextAction.of(NextActionType.FOLLOW_UP, 200L);
-        given(answerCommandService.saveFollowUpQuestion(session, main, 1, "꼬리질문")).willReturn(mockNextAction);
+        given(answerCommandService.saveFollowUpQuestion(eq(SESSION_ID), eq(100L), eq(1), any(FollowUpResult.class)))
+                .willReturn(mockNextAction);
 
         // when
         AnswerResponse response = answerService.submitAudioAnswer(SESSION_ID, USER_ID, 100L, audioFile, durationSec);

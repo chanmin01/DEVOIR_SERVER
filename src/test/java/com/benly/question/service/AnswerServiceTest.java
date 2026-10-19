@@ -5,6 +5,8 @@ import com.benly.question.client.ClaudeClient;
 import com.benly.question.client.WhisperClient;
 import com.benly.question.dto.AnswerCreateRequest;
 import com.benly.question.dto.AnswerResponse;
+import com.benly.question.dto.FollowUpResult;
+import com.benly.question.entity.FollowUpStrategy;
 import com.benly.question.entity.Answer;
 import com.benly.question.entity.AnswerType;
 import com.benly.question.entity.NextActionType;
@@ -23,6 +25,7 @@ import org.mockito.quality.Strictness;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
@@ -68,8 +71,9 @@ class AnswerServiceTest {
 
         given(answerCommandService.saveTextAnswer(SESSION_ID, USER_ID, request)).willReturn(mockAnswer);
         given(answerCommandService.buildContext(any())).willReturn("context");
-        given(claudeClient.generateFollowUp(anyString())).willReturn("꼬리질문입니다");
-        given(answerCommandService.saveFollowUpQuestion(any(), any(), any(Integer.class), anyString()))
+        given(claudeClient.generateFollowUp(anyString(), any(), any()))
+                .willReturn(new FollowUpResult("꼬리질문입니다", FollowUpStrategy.WHY));
+        given(answerCommandService.saveFollowUpQuestion(any(), any(), anyInt(), any(FollowUpResult.class)))
                 .willReturn(mockNextAction);
 
         AnswerResponse response = answerService.submitTextAnswer(SESSION_ID, USER_ID, request);
