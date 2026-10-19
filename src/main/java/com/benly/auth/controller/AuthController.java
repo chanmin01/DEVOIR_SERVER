@@ -53,7 +53,13 @@ public class AuthController {
     private String clientIp(HttpServletRequest request) {
         String forwarded = request.getHeader("X-Forwarded-For");
         if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();   // ALB 뒤에 있으므로 첫 번째 값
+            // ALB(append 모드)는 자신이 본 클라이언트 IP를 맨 뒤에 덧붙인다.
+            // 앞쪽 값은 클라이언트가 임의로 넣을 수 있어 레이트리밋 우회에 쓰인다.
+            String[] hops = forwarded.split(",");
+            String nearest = hops[hops.length - 1].trim();
+            if (!nearest.isEmpty()) {
+                return nearest;
+            }
         }
         return request.getRemoteAddr();
     }

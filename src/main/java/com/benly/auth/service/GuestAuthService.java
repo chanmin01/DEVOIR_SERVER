@@ -51,10 +51,14 @@ public class GuestAuthService {
         // 만료분 정리 (맵 무한 증가 방지)
         recentIssues.entrySet().removeIf(e -> e.getValue().plus(COOLDOWN).isBefore(now));
 
-        Instant last = recentIssues.get(clientIp);
-        if (last != null && last.plus(COOLDOWN).isAfter(now)) {
+        // 확인과 기록을 하나의 원자적 연산으로 묶는다.
+        // get 후 put 으로 나누면 같은 IP의 동시 요청이 둘 다 last == null 을 읽고 통과한다.
+        Instant kept = recentIssues.merge(clientIp, now,
+                (last, candidate) -> last.plus(COOLDOWN).isAfter(candidate) ? last : candidate);
+
+        // merge 가 now 를 그대로 돌려줬다면 이번 요청이 기록된 것, 아니면 쿨다운에 걸린 것
+        if (kept != now) {
             throw new BusinessException(AuthErrorCode.GUEST_ISSUE_TOO_FREQUENT);
         }
-        recentIssues.put(clientIp, now);
     }
 }
