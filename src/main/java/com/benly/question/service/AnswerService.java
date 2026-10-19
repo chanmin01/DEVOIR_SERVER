@@ -11,6 +11,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import com.benly.question.dto.FollowUpResult;
+import com.benly.question.entity.FollowUpStrategy;
+import com.benly.question.entity.StrategySet;
+
+import java.util.List;
 
 @Slf4j
 @Service
@@ -55,37 +60,44 @@ public class AnswerService {
 
         if (isMain) {
             // 메인에 답변 → 꼬리1 생성 시도
-            return tryCreateFollowUp(answeredQuestion, session, 1);
+            return tryCreateFollowUp(answeredQuestion.getId(), session, 1);
         }
 
         // 꼬리에 답변 → 그 메인의 꼬리 개수 확인
-        Question mainQuestion = answeredQuestion.getParent();
-        int followUpCount = answerCommandService.countFollowUps(mainQuestion);
+        // getParent()는 미초기화 LAZY 프록시다. open-in-view 가 꺼져 있어 엔티티를 그대로
+        // 넘기면 트랜잭션 밖에서 LazyInitializationException 이 난다. ID만 꺼내 넘긴다.
+        Long mainQuestionId = answeredQuestion.getParent().getId();
+        int followUpCount = answerCommandService.countFollowUps(mainQuestionId);
 
         if (followUpCount < MAX_FOLLOW_UP) {
             // 꼬리2 생성 시도
-            return tryCreateFollowUp(mainQuestion, session, followUpCount + 1);
+            return tryCreateFollowUp(mainQuestionId, session, followUpCount + 1);
         }
 
         // 꼬리 2개 다 함 → 다음 메인 or FINISH (엔티티 대신 식별자 ID를 넘김)
-        return answerCommandService.decideNextMainOrFinish(mainQuestion.getId(), session.getId());
+        return answerCommandService.decideNextMainOrFinish(mainQuestionId, session.getId());
     }
 
     // 꼬리질문 생성 시도 (실패해도 답변은 유지, 다음 메인으로)
-    private AnswerResponse.NextAction tryCreateFollowUp(Question mainQuestion, Session session, int followUpSeq) {
+    private AnswerResponse.NextAction tryCreateFollowUp(Long mainQuestionId, Session session, int followUpSeq) {
         try {
-            String context = answerCommandService.buildContext(mainQuestion);
+            String context = answerCommandService.buildContext(mainQuestionId);
+
+            // 면접 단계로 전략 묶음을 고르고, 이 메인에서 이미 쓴 전략은 후보에서 뺀다
+            StrategySet set = StrategySet.resolve(session.getStage());
+            List<FollowUpStrategy> used = answerCommandService.usedStrategies(mainQuestionId);
+
             // 외부 트랜잭션 밖에서 수 초 대기하며 Claude API 호출
-            String content = claudeClient.generateFollowUp(context);
+            FollowUpResult result = claudeClient.generateFollowUp(context, set, used);
 
             // API 호출 성공 시 독립된 새 트랜잭션(REQUIRES_NEW)으로 DB에 꼬리질문 저장
-            return answerCommandService.saveFollowUpQuestion(session, mainQuestion, followUpSeq, content);
+            return answerCommandService.saveFollowUpQuestion(session.getId(), mainQuestionId, followUpSeq, result);
         } catch (Exception e) {
             // 꼬리 생성 실패 → 메인 답변은 이미 커밋되어 저장됨, 다음 메인으로 넘어감
-            log.warn("꼬리질문 생성 실패, 다음 메인으로 진행. mainQuestionId={}", mainQuestion.getId(), e);
+            log.warn("꼬리질문 생성 실패, 다음 메인으로 진행. mainQuestionId={}", mainQuestionId, e);
 
             // 엔티티 대신 식별자 ID를 넘김
-            return answerCommandService.decideNextMainOrFinish(mainQuestion.getId(), session.getId());
+            return answerCommandService.decideNextMainOrFinish(mainQuestionId, session.getId());
         }
     }
 
@@ -98,18 +110,18 @@ public class AnswerService {
                     skippedQuestion.getId(), session.getId());
         }
 
-        // 꼬리 스킵
-        Question mainQuestion = skippedQuestion.getParent();
-        int followUpCount = answerCommandService.countFollowUps(mainQuestion);
+        // 꼬리 스킵 — 여기도 프록시 대신 ID만 넘긴다
+        Long mainQuestionId = skippedQuestion.getParent().getId();
+        int followUpCount = answerCommandService.countFollowUps(mainQuestionId);
 
         if (followUpCount < MAX_FOLLOW_UP) {
             // 꼬리1 스킵 → 새 꼬리 생성 (답변이랑 같은 로직)
-            return tryCreateFollowUp(mainQuestion, session, followUpCount + 1);
+            return tryCreateFollowUp(mainQuestionId, session, followUpCount + 1);
         }
 
         // 꼬리2 스킵 → 다음 메인
         return answerCommandService.decideNextMainOrFinish(
-                mainQuestion.getId(), session.getId());
+                mainQuestionId, session.getId());
     }
 
     public AnswerResponse skipQuestion(Long sessionId, Long userId, Long questionId) {
