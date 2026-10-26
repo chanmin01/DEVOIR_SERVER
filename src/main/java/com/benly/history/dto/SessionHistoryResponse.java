@@ -1,5 +1,6 @@
 package com.benly.history.dto;
 
+import com.benly.feedback.entity.SessionFeedback;
 import com.benly.session.entity.Session;
 
 import java.time.LocalDateTime;
@@ -10,8 +11,8 @@ public record SessionHistoryResponse(
         long weekCount,
         List<Item> sessions
 ) {
-    public static SessionHistoryResponse of(long totalCount, long weekCount, List<Session> sessions) {
-        List<Item> items = sessions.stream().map(Item::from).toList();
+    public static SessionHistoryResponse of(long totalCount, long weekCount, List<SessionFeedback> feedbacks) {
+        List<Item> items = feedbacks.stream().map(Item::from).toList();
         return new SessionHistoryResponse(totalCount, weekCount, items);
     }
 
@@ -22,9 +23,11 @@ public record SessionHistoryResponse(
             String companyName,
             String jobRole,
             String status,
-            LocalDateTime createdAt
+            LocalDateTime createdAt,
+            Integer totalScore
     ) {
-        public static Item from(Session s) {
+        public static Item from(SessionFeedback sf) {
+            Session s = sf.getSession();
             return new Item(
                     s.getId(),
                     s.getCompanyType(),
@@ -32,7 +35,8 @@ public record SessionHistoryResponse(
                     s.getCompanyName(),
                     s.getJobTitle(),
                     s.getStatus().name(),
-                    s.getCreatedAt()
+                    s.getCreatedAt(),
+                    sf.getTotalScore()
             );
         }
     }
