@@ -1,12 +1,12 @@
 package com.benly.history.service;
 
 import com.benly.feedback.entity.FeedbackStatus;
+import com.benly.feedback.entity.SessionFeedback;
 import com.benly.global.exception.BusinessException;
 import com.benly.history.dto.SessionHistoryResponse;
 import com.benly.history.exception.HistoryErrorCode;
 import com.benly.history.repository.SessionHistoryRepository;
 import com.benly.session.entity.CompanyType;
-import com.benly.session.entity.Session;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,21 +21,20 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class HistoryService {
 
-    // 히스토리 기준: 세션 상태가 아니라 "채점 완료" 여부
     private static final FeedbackStatus SCORED = FeedbackStatus.COMPLETED;
 
     private final SessionHistoryRepository sessionHistoryRepository;
 
     public SessionHistoryResponse getMySessions(Long userId, String companyType) {
-        List<Session> sessions = findScoredSessions(userId, companyType);
+        List<SessionFeedback> feedbacks = findScoredSessions(userId, companyType);
 
         long totalCount = sessionHistoryRepository.countScored(userId, SCORED);
         long weekCount = sessionHistoryRepository.countScoredSince(userId, SCORED, thisWeekStart());
 
-        return SessionHistoryResponse.of(totalCount, weekCount, sessions);
+        return SessionHistoryResponse.of(totalCount, weekCount, feedbacks);
     }
 
-    private List<Session> findScoredSessions(Long userId, String companyType) {
+    private List<SessionFeedback> findScoredSessions(Long userId, String companyType) {
         if (companyType == null || companyType.isBlank()) {
             return sessionHistoryRepository.findScoredSessions(userId, SCORED);
         }
