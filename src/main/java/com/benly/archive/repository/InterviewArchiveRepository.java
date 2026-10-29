@@ -9,6 +9,5 @@ import java.util.Optional;
 public interface InterviewArchiveRepository extends JpaRepository<InterviewArchive, Long> {
 
     Optional<InterviewArchive> findByIdAndDeletedAtIsNull(Long id);
-
-    long countByUserIdAndCreatedAtGreaterThanEqual(Long userId, LocalDateTime from);
+    Optional<InterviewArchive> findTopByUserIdOrderByIdDesc(Long userId);
 }
