@@ -154,6 +154,8 @@ public class FeedbackScoringClient {
                 "tool_choice", Map.of("type", "tool", "name", toolName)
         );
 
+        long startedAt = System.currentTimeMillis();
+
         JsonNode response = restClient.post()
                 .uri(apiUrl)
                 .header("x-api-key", apiKey)
@@ -162,6 +164,12 @@ public class FeedbackScoringClient {
                 .body(requestBody)
                 .retrieve()
                 .body(JsonNode.class);
+
+        log.info("채점 호출 tool={} {}ms inputTokens={} outputTokens={}",
+                toolName,
+                System.currentTimeMillis() - startedAt,
+                response.path("usage").path("input_tokens").asInt(-1),
+                response.path("usage").path("output_tokens").asInt(-1));
 
         for (JsonNode content : response.path("content")) {
             if ("tool_use".equals(content.path("type").asText())) {
