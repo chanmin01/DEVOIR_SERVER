@@ -27,19 +27,29 @@ public class FeedbackCommandService {
     @Async
     public void score(Long sessionId) {
         try {
-            ScoringPlan plan = scoringTx.loadPlan(sessionId);       // 1) 읽기(짧은 tx)
-            List<ScoredTopic> topics = scoreTopicsInParallel(plan); // 2) 병렬 채점(tx 밖)
+            long startedAt = System.currentTimeMillis();
+
+            ScoringPlan plan = scoringTx.loadPlan(sessionId);
+            List<ScoredTopic> topics = scoreTopicsInParallel(plan);
+            long topicsDoneAt = System.currentTimeMillis();
 
             int totalScore = averageTopicScore(topics);
             int totalSkipped = topics.stream().mapToInt(ScoredTopic::skippedCount).sum();
 
             SessionSummary summary = scoringClient.summarize(
                     plan.ctx(), totalScore,
-                    topics.stream().map(ScoredTopic::score).toList(), totalSkipped); // 3) 종합 1회
+                    topics.stream().map(ScoredTopic::score).toList(), totalSkipped);
+            long summaryDoneAt = System.currentTimeMillis();
 
-            scoringTx.saveResults(sessionId, totalScore, topics, summary);           // 4) 저장(짧은 tx)
+            scoringTx.saveResults(sessionId, totalScore, topics, summary);
+
+            log.info("채점 단계 sessionId={} 주제수={} 주제채점={}ms 총평={}ms 전체={}ms",
+                    sessionId,
+                    topics.size(),
+                    topicsDoneAt - startedAt,
+                    summaryDoneAt - topicsDoneAt,
+                    System.currentTimeMillis() - startedAt);
             log.info("채점 완료 sessionId={}, totalScore={}", sessionId, totalScore);
-
         } catch (Exception e) {
             log.error("채점 실패 sessionId={}", sessionId, e);
             scoringTx.markFailed(sessionId);
