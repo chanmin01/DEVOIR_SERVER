@@ -54,12 +54,11 @@ public class CompanySearchService {
         companyRepository.searchByName(key, candidates)
                 .forEach(c -> merged.put(c.companyId(), c));
         companyAliasRepository.searchByAlias(key, candidates)
-                .forEach(c -> merged.putIfAbsent(c.companyId(), c));
+                .forEach(c -> merged.merge(c.companyId(), c, (current, alias) -> preferExact(current, alias, key)));
 
         List<CompanySearchResponse.Item> items = merged.values().stream()
-                .filter(CompanyCandidate::isShowable)
                 .sorted(Comparator
-                        .comparing((CompanyCandidate c) -> !c.matchedKey().equals(key))
+                        .comparing((CompanyCandidate c) -> !c.isExactMatch(key))
                         .thenComparing(CompanyCandidate::questionCount, Comparator.reverseOrder())
                         .thenComparing(CompanyCandidate::name))
                 .limit(limit)
@@ -67,5 +66,12 @@ public class CompanySearchService {
                 .toList();
 
         return new CompanySearchResponse(items);
+    }
+
+    private CompanyCandidate preferExact(CompanyCandidate current, CompanyCandidate incoming, String key) {
+        if (!current.isExactMatch(key) && incoming.isExactMatch(key)) {
+            return incoming;
+        }
+        return current;
     }
 }

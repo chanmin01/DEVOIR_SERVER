@@ -16,7 +16,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static com.benly.archive.entity.CompanySource.DART;
-import static com.benly.archive.entity.CompanySource.USER;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -88,18 +87,20 @@ class CompanySearchServiceTest {
     }
 
     @Test
-    @DisplayName("질문 0개인 직접 입력 회사는 빼고, DART 회사는 0개여도 남긴다")
-    void hideEmptyUserCompany() {
-        given(companyRepository.searchByName(eq("로켓"), any())).willReturn(List.of(
-                new CompanyCandidate(10L, "로켓펀치", USER, "로켓펀치", 0L),
-                new CompanyCandidate(11L, "로켓배송", DART, "로켓배송", 0L)));
-        given(companyAliasRepository.searchByAlias(eq("로켓"), any())).willReturn(List.of());
+    @DisplayName("이름은 부분 일치, 별칭은 정확 일치면 별칭 후보를 남겨 맨 위로 올린다")
+    void exactAliasWinsOverPartialName() {
+        given(companyRepository.searchByName(eq("카카오"), any())).willReturn(List.of(
+                new CompanyCandidate(8L, "카카오페이", DART, "카카오페이", 50L),
+                new CompanyCandidate(7L, "카카오뱅크", DART, "카카오뱅크", 2L)));
+        given(companyAliasRepository.searchByAlias(eq("카카오"), any()))
+                .willReturn(List.of(new CompanyCandidate(7L, "카카오뱅크", DART, "카카오", "카카오", 2L)));
 
-        CompanySearchResponse result = companySearchService.search("로켓", null);
+        CompanySearchResponse result = companySearchService.search("카카오", null);
 
         assertThat(result.companies())
                 .extracting(CompanySearchResponse.Item::name)
-                .containsExactly("로켓배송");
+                .containsExactly("카카오뱅크", "카카오페이");
+        assertThat(result.companies().get(0).matchedAlias()).isEqualTo("카카오");
     }
 
     @Test
