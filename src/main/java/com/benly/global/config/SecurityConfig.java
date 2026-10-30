@@ -57,7 +57,9 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/v1/history/**",
                                 "/api/v1/documents/**",
-                                "/api/v1/users/**"
+                                "/api/v1/users/**",
+                                "/api/v1/archives/**",
+                                "/api/v1/companies/**"
                         ).hasRole("MEMBER")
 
                         // 나머지(세션·질문·답변·채점)는 게스트도 허용
