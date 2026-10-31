@@ -22,20 +22,20 @@ public class ArchiveReport extends BaseTimeEntity {
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "question_id", nullable = false)
-    private ArchiveQuestion question;
+    @JoinColumn(name = "archive_id", nullable = false)
+    private InterviewArchive archive;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "reason", nullable = false, length = 20)
     private ReportReason reason;
 
-    private ArchiveReport(User user, ArchiveQuestion question, ReportReason reason) {
+    private ArchiveReport(User user, InterviewArchive archive, ReportReason reason) {
         this.user = user;
-        this.question = question;
+        this.archive = archive;
         this.reason = reason;
     }
 
-    public static ArchiveReport of(User user, ArchiveQuestion question, ReportReason reason) {
-        return new ArchiveReport(user, question, reason);
+    public static ArchiveReport of(User user, InterviewArchive archive, ReportReason reason) {
+        return new ArchiveReport(user, archive, reason);
     }
 }
