@@ -51,6 +51,16 @@ public class InterviewArchive extends BaseEntity {
     @Column(name = "memo", length = 500)
     private String memo;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 10)
+    private ArchiveStatus status;
+
+    @Column(name = "like_count", nullable = false)
+    private int likeCount;
+
+    @Column(name = "report_count", nullable = false)
+    private int reportCount;
+
     private InterviewArchive(User user, Company company, CompanyType companyType, InterviewStage stage,
                              InterviewFormat format, String jobRole, YearMonth interviewedMonth, String memo) {
         this.user = user;
@@ -61,6 +71,9 @@ public class InterviewArchive extends BaseEntity {
         this.jobRole = jobRole;
         this.interviewedAt = interviewedMonth.atDay(1);
         this.memo = memo;
+        this.status = ArchiveStatus.VISIBLE;
+        this.likeCount = 0;
+        this.reportCount = 0;
     }
 
     public static InterviewArchive create(User user, Company company, CompanyType companyType, InterviewStage stage,
@@ -70,6 +83,10 @@ public class InterviewArchive extends BaseEntity {
 
     public boolean isOwnedBy(Long userId) {
         return this.user.getId().equals(userId);
+    }
+
+    public boolean isVisible() {
+        return this.status == ArchiveStatus.VISIBLE && !isDeleted();
     }
 
     public YearMonth getInterviewedMonth() {

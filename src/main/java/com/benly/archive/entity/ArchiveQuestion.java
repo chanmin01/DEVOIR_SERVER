@@ -29,27 +29,14 @@ public class ArchiveQuestion extends BaseTimeEntity {
     @Column(name = "like_count", nullable = false)
     private int likeCount;
 
-    @Column(name = "report_count", nullable = false)
-    private int reportCount;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 10)
-    private QuestionStatus status;
-
     private ArchiveQuestion(InterviewArchive archive, int seq, String content) {
         this.archive = archive;
         this.seq = seq;
         this.content = content;
         this.likeCount = 0;
-        this.reportCount = 0;
-        this.status = QuestionStatus.VISIBLE;
     }
 
     public static ArchiveQuestion of(InterviewArchive archive, int seq, String content) {
         return new ArchiveQuestion(archive, seq, content);
-    }
-
-    public boolean isVisible() {
-        return this.status == QuestionStatus.VISIBLE;
     }
 }
