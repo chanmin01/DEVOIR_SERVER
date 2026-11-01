@@ -4,6 +4,7 @@ import com.benly.document.entity.Document;
 import com.benly.document.exception.DocumentErrorCode;
 import com.benly.document.repository.DocumentRepository;
 import com.benly.global.exception.BusinessException;
+import com.benly.global.recovery.StaleTaskPolicy;
 import com.benly.question.dto.CurrentQuestionResponse;
 import com.benly.question.entity.Question;
 import com.benly.question.repository.QuestionRepository;
@@ -27,9 +28,10 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class SessionService {
     private final SessionRepository sessionRepository;
-    private final UserRepository userRepository; // 여기 부분은 user 담당자가 repository를 만들면 적용
+    private final UserRepository userRepository;
     private final DocumentRepository documentRepository;
     private final QuestionRepository questionRepository;
+    private final StaleTaskPolicy staleTaskPolicy;
 
     @Transactional
     public SessionCreateResponse createSession(Long userId, SessionCreateRequest sessionCreateRequest) {
@@ -126,7 +128,11 @@ public class SessionService {
             throw new BusinessException(SessionErrorCode.SESSION_FORBIDDEN);
         }
 
-        return GenerationStatusResponse.from(session);
+        boolean stale = session.getStatus() == SessionStatus.GENERATING
+                && session.getCreatedAt().isBefore(staleTaskPolicy.generationThreshold());
+        return stale
+                ? new GenerationStatusResponse(SessionStatus.FAILED.name())
+                : GenerationStatusResponse.from(session);
     }
 
     // 채점 요청 (analyze)
