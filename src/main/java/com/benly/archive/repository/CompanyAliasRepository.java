@@ -25,8 +25,8 @@ public interface CompanyAliasRepository extends JpaRepository<CompanyAlias, Long
             from CompanyAlias al
             join al.company c
             left join InterviewArchive a on a.company = c and a.deletedAt is null
+                and a.status = com.benly.archive.entity.ArchiveStatus.VISIBLE
             left join ArchiveQuestion q on q.archive = a
-                and q.status = com.benly.archive.entity.QuestionStatus.VISIBLE
             where al.normalizedAlias like concat(:key, '%')
             group by c.id, c.name, c.source
             having c.source = com.benly.archive.entity.CompanySource.DART or count(distinct q) > 0

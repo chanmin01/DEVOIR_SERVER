@@ -1,6 +1,6 @@
 package com.benly.archive.entity;
 
-public enum QuestionStatus {
+public enum ArchiveStatus {
     VISIBLE,
     HIDDEN
 }

@@ -19,8 +19,8 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
                 c.id, c.name, c.source, c.normalizedName, count(q))
             from Company c
             left join InterviewArchive a on a.company = c and a.deletedAt is null
+                and a.status = com.benly.archive.entity.ArchiveStatus.VISIBLE
             left join ArchiveQuestion q on q.archive = a
-                and q.status = com.benly.archive.entity.QuestionStatus.VISIBLE
             where c.normalizedName like concat(:key, '%')
             group by c.id, c.name, c.source, c.normalizedName
             having c.source = com.benly.archive.entity.CompanySource.DART or count(q) > 0
