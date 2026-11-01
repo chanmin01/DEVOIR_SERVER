@@ -16,7 +16,7 @@ public record ArchiveCursor(Long score, Long id) {
         if (raw == null || raw.isBlank()) {
             return null;
         }
-        String[] parts = raw.split("_");
+        String[] parts = raw.split("_", -1);
         if (parts.length != 2) {
             throw invalid();
         }

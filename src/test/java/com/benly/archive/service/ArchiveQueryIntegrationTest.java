@@ -154,6 +154,11 @@ class ArchiveQueryIntegrationTest {
         assertThat(page1.hasNext()).isTrue();
         CompanyListResponse.Item firstItem = page1.companies().get(0);
         assertThat(page1.nextCursor()).isEqualTo(firstItem.questionCount() + "_" + firstItem.companyId());
+        CompanyListResponse page2 = archiveQueryService.getCompanies(CompanyType.FINANCE_IT, page1.nextCursor(), 50);
+        List<Long> expectedRest = all.companies().stream().skip(1)
+                .map(CompanyListResponse.Item::companyId).toList();
+        assertThat(page2.companies()).extracting(CompanyListResponse.Item::companyId)
+                .containsExactlyElementsOf(expectedRest);
     }
 
     @Test

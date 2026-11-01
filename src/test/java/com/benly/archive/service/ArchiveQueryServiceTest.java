@@ -38,6 +38,15 @@ class ArchiveQueryServiceTest {
     private static final Long USER_ID = 1L;
 
     @Test
+    @DisplayName("커서 끝에 _가 붙어 있으면 400")
+    void trailingUnderscoreCursor() {
+        assertThatThrownBy(() -> archiveQueryService.getArchives(USER_ID,
+                search(null, ArchiveSort.POPULAR, "5_2_", null)))
+                .extracting("errorCode").isEqualTo(ArchiveErrorCode.INVALID_CURSOR);
+        verifyNoInteractions(archiveRepository);
+    }
+
+    @Test
     @DisplayName("size가 1~50 밖이면 400")
     void invalidSize() {
         assertThatThrownBy(() -> archiveQueryService.getArchives(USER_ID, search(null, null, null, 0)))
