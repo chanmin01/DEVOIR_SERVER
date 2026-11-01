@@ -15,6 +15,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -66,7 +67,7 @@ class StaleTaskRecoveryIntegrationTest {
     void restartStaleScoring() {
         Session session = session(SessionStatus.ANALYZING);
         SessionFeedback sf = sessionFeedbackRepository.save(SessionFeedback.startScoring(session));
-        LocalDateTime now = LocalDateTime.now().plusMinutes(2);
+        LocalDateTime now = LocalDateTime.now().plusMinutes(2).truncatedTo(ChronoUnit.MICROS);
 
         int restarted = sessionFeedbackRepository.restartStaleScoring(
                 session.getId(), LocalDateTime.now().plusMinutes(1), now);
