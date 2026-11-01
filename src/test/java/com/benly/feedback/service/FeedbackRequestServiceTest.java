@@ -7,6 +7,7 @@ import com.benly.feedback.exception.FeedbackErrorCode;
 import com.benly.feedback.repository.SessionFeedbackRepository;
 import com.benly.feedback.repository.SessionReadRepository;
 import com.benly.global.exception.BusinessException;
+import com.benly.global.recovery.StaleTaskPolicy;
 import com.benly.session.entity.Session;
 import com.benly.session.entity.SessionStatus;
 import com.benly.user.entity.User;
@@ -36,6 +37,7 @@ class FeedbackRequestServiceTest {
     @Mock private SessionReadRepository sessionReadRepository;
     @Mock private SessionFeedbackRepository sessionFeedbackRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private StaleTaskPolicy staleTaskPolicy;
 
     @InjectMocks
     private FeedbackRequestService service;
@@ -98,7 +100,7 @@ class FeedbackRequestServiceTest {
         given(sessionReadRepository.findById(SESSION_ID)).willReturn(Optional.of(s));
         given(sessionFeedbackRepository.findBySession_Id(SESSION_ID))
                 .willReturn(Optional.of(feedback(s, FeedbackStatus.FAILED)));
-        given(sessionFeedbackRepository.restartScoring(SESSION_ID, FeedbackStatus.FAILED, FeedbackStatus.SCORING))
+        given(sessionFeedbackRepository.restartScoring(eq(SESSION_ID), eq(FeedbackStatus.FAILED), eq(FeedbackStatus.SCORING), any()))
                 .willReturn(1);
 
         // when
@@ -116,7 +118,7 @@ class FeedbackRequestServiceTest {
         given(sessionReadRepository.findById(SESSION_ID)).willReturn(Optional.of(s));
         given(sessionFeedbackRepository.findBySession_Id(SESSION_ID))
                 .willReturn(Optional.of(feedback(s, FeedbackStatus.FAILED)));
-        given(sessionFeedbackRepository.restartScoring(SESSION_ID, FeedbackStatus.FAILED, FeedbackStatus.SCORING))
+        given(sessionFeedbackRepository.restartScoring(eq(SESSION_ID), eq(FeedbackStatus.FAILED), eq(FeedbackStatus.SCORING), any()))
                 .willReturn(0);
 
         // when & then
@@ -151,5 +153,36 @@ class FeedbackRequestServiceTest {
         assertThatThrownBy(() -> service.requestScoring(999L, SESSION_ID))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", FeedbackErrorCode.SESSION_FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("채점 중이지만 멈춘 건이면 다시 채점하고 이벤트를 발행한다")
+    void restartWhenStale() {
+        Session s = session(SessionStatus.ANALYZING);
+        given(sessionReadRepository.findById(SESSION_ID)).willReturn(Optional.of(s));
+        given(sessionFeedbackRepository.findBySession_Id(SESSION_ID))
+                .willReturn(Optional.of(feedback(s, FeedbackStatus.SCORING)));
+        given(sessionFeedbackRepository.restartStaleScoring(eq(SESSION_ID), any(), any()))
+                .willReturn(1);
+
+        service.requestScoring(USER_ID, SESSION_ID);
+
+        verify(eventPublisher).publishEvent(any(ScoringRequestedEvent.class));
+    }
+
+    @Test
+    @DisplayName("채점 중이고 아직 기준 시간 전이면 거부한다")
+    void rejectWhenScoringNotStale() {
+        Session s = session(SessionStatus.ANALYZING);
+        given(sessionReadRepository.findById(SESSION_ID)).willReturn(Optional.of(s));
+        given(sessionFeedbackRepository.findBySession_Id(SESSION_ID))
+                .willReturn(Optional.of(feedback(s, FeedbackStatus.SCORING)));
+        given(sessionFeedbackRepository.restartStaleScoring(eq(SESSION_ID), any(), any()))
+                .willReturn(0);
+
+        assertThatThrownBy(() -> service.requestScoring(USER_ID, SESSION_ID))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", FeedbackErrorCode.ALREADY_SCORED);
+        verify(eventPublisher, never()).publishEvent(any());
     }
 }
