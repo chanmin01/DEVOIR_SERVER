@@ -7,6 +7,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+
 @Entity
 @Getter
 @Table(name = "session_feedbacks")
@@ -37,6 +39,9 @@ public class SessionFeedback extends BaseEntity {
     @Column(name = "scoring_status", nullable = false, length = 20)
     private FeedbackStatus status;
 
+    @Column(name = "scoring_started_at")
+    private LocalDateTime scoringStartedAt;
+
     @Column(name = "filler_word_count")
     private Integer fillerWordCount;
 
@@ -52,6 +57,7 @@ public class SessionFeedback extends BaseEntity {
     private SessionFeedback(Session session) {
         this.session = session;
         this.status = FeedbackStatus.SCORING;
+        this.scoringStartedAt = LocalDateTime.now();
     }
 
     public static SessionFeedback startScoring(Session session) {
@@ -68,6 +74,7 @@ public class SessionFeedback extends BaseEntity {
         this.speechSpeed = null;
         this.speechSpeedNote = null;
         this.status = FeedbackStatus.SCORING;
+        this.scoringStartedAt = LocalDateTime.now();
     }
 
     public void complete(Integer totalScore, String summary,
@@ -107,4 +114,7 @@ public class SessionFeedback extends BaseEntity {
         return this.status == FeedbackStatus.FAILED;
     }
 
+    public boolean isStale(LocalDateTime threshold) {
+        return isScoring() && scoringStartedAt != null && scoringStartedAt.isBefore(threshold);
+    }
 }
