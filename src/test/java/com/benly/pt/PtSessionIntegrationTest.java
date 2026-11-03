@@ -3,6 +3,8 @@ package com.benly.pt;
 import com.benly.archive.entity.Company;
 import com.benly.archive.repository.CompanyRepository;
 import com.benly.global.exception.BusinessException;
+import com.benly.global.recovery.StaleTaskPolicy;
+
 import com.benly.pt.dto.*;
 import com.benly.pt.entity.*;
 import com.benly.pt.repository.*;
@@ -108,6 +110,16 @@ class PtSessionIntegrationTest {
         MutableClock clock() {
             return new MutableClock();
         }
+
+        @Bean
+        StaleTaskPolicy staleTaskPolicy() {
+            return new StaleTaskPolicy(
+                    Duration.ofMinutes(10),
+                    Duration.ofMinutes(3),
+                    Duration.ofMinutes(15)
+            );
+        }
+
 
         @Bean
         ObjectMapper mapper() {
