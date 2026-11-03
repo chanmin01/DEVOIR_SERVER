@@ -27,10 +27,13 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -128,18 +131,35 @@ class SessionQueryTest {
         GenerationStatusResponse response = sessionService.getGenerationStatus(USER_ID, SESSION_ID);
 
         assertThat(response.status()).isEqualTo("READY");
+        verify(sessionRepository, never()).failStaleGeneratingById(any(), any(), any());
     }
 
     @Test
-    @DisplayName("생성 상태 폴링 - 시작 후 기준 시간을 넘기면 FAILED")
+    @DisplayName("생성 상태 폴링 - 시작 후 기준 시간을 넘기면 DB에 FAILED를 기록하고 FAILED")
     void getGenerationStatus_startedStale() {
         LocalDateTime now = LocalDateTime.now();
         thresholds(now);
         generatingSession(now.minusMinutes(5), now.minusMinutes(4));
+        given(sessionRepository.failStaleGeneratingById(eq(SESSION_ID), any(), any())).willReturn(1);
 
         GenerationStatusResponse response = sessionService.getGenerationStatus(USER_ID, SESSION_ID);
 
         assertThat(response.status()).isEqualTo("FAILED");
+        verify(sessionRepository).failStaleGeneratingById(SESSION_ID, now.minusMinutes(3), now.minusMinutes(15));
+    }
+
+    @Test
+    @DisplayName("생성 상태 폴링 - 그사이 워커가 끝냈으면 DB의 현재 상태를 응답")
+    void getGenerationStatus_finishedMeanwhile() {
+        LocalDateTime now = LocalDateTime.now();
+        thresholds(now);
+        generatingSession(now.minusMinutes(5), now.minusMinutes(4));
+        given(sessionRepository.failStaleGeneratingById(eq(SESSION_ID), any(), any())).willReturn(0);
+        given(sessionRepository.findStatusById(SESSION_ID)).willReturn(SessionStatus.READY);
+
+        GenerationStatusResponse response = sessionService.getGenerationStatus(USER_ID, SESSION_ID);
+
+        assertThat(response.status()).isEqualTo("READY");
     }
 
     @Test
@@ -152,6 +172,7 @@ class SessionQueryTest {
         GenerationStatusResponse response = sessionService.getGenerationStatus(USER_ID, SESSION_ID);
 
         assertThat(response.status()).isEqualTo("GENERATING");
+        verify(sessionRepository, never()).failStaleGeneratingById(any(), any(), any());
     }
 
     @Test
@@ -164,14 +185,16 @@ class SessionQueryTest {
         GenerationStatusResponse response = sessionService.getGenerationStatus(USER_ID, SESSION_ID);
 
         assertThat(response.status()).isEqualTo("GENERATING");
+        verify(sessionRepository, never()).failStaleGeneratingById(any(), any(), any());
     }
 
     @Test
-    @DisplayName("생성 상태 폴링 - 시작 전인데 대기 기준 시간을 넘기면 FAILED")
+    @DisplayName("생성 상태 폴링 - 시작 전인데 대기 기준 시간을 넘기면 DB에 FAILED를 기록하고 FAILED")
     void getGenerationStatus_queuedStale() {
         LocalDateTime now = LocalDateTime.now();
         thresholds(now);
         generatingSession(now.minusMinutes(20), null);
+        given(sessionRepository.failStaleGeneratingById(eq(SESSION_ID), any(), any())).willReturn(1);
 
         GenerationStatusResponse response = sessionService.getGenerationStatus(USER_ID, SESSION_ID);
 

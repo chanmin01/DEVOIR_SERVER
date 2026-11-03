@@ -156,8 +156,8 @@ class StaleTaskRecoveryIntegrationTest {
         Session fresh = session(SessionStatus.GENERATING);
         Session ready = session(SessionStatus.READY);
         LocalDateTime now = LocalDateTime.now();
-        sessionRepository.markGenerationStarted(stale.getId(), now.minusMinutes(10));
-        sessionRepository.markGenerationStarted(fresh.getId(), now);
+        sessionRepository.markGenerationStarted(stale.getId(), now.minusMinutes(10), now.minusMinutes(15));
+        sessionRepository.markGenerationStarted(fresh.getId(), now, now.minusMinutes(15));
 
         sessionRepository.failStaleGenerating(now.minusMinutes(3), now.minusMinutes(15));
 
@@ -195,13 +195,40 @@ class StaleTaskRecoveryIntegrationTest {
         Session generating = session(SessionStatus.GENERATING);
         LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
 
-        int skipped = sessionRepository.markGenerationStarted(failed.getId(), now);
-        int marked = sessionRepository.markGenerationStarted(generating.getId(), now);
+        int skipped = sessionRepository.markGenerationStarted(failed.getId(), now, now.minusMinutes(15));
+        int marked = sessionRepository.markGenerationStarted(generating.getId(), now, now.minusMinutes(15));
 
         assertThat(skipped).isZero();
         assertThat(marked).isEqualTo(1);
         assertThat(sessionRepository.findById(generating.getId()).orElseThrow().getGenerationStartedAt())
                 .isEqualTo(now);
+    }
+
+    @Test
+    @DisplayName("대기 기준 시간을 넘긴 세션에는 늦게 뜬 워커가 시작 시각을 찍지 못한다")
+    void markGenerationStartedRejectsExpiredQueue() {
+        Session queued = session(SessionStatus.GENERATING);
+        LocalDateTime now = LocalDateTime.now();
+
+        int marked = sessionRepository.markGenerationStarted(queued.getId(), now, now.plusMinutes(1));
+
+        assertThat(marked).isZero();
+        assertThat(sessionRepository.findById(queued.getId()).orElseThrow().getGenerationStartedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("한 세션만 멈춤 기준으로 정리하고 다른 세션은 건드리지 않는다")
+    void failStaleGeneratingById() {
+        Session target = session(SessionStatus.GENERATING);
+        Session other = session(SessionStatus.GENERATING);
+        LocalDateTime now = LocalDateTime.now();
+
+        int failed = sessionRepository.failStaleGeneratingById(target.getId(), now.minusMinutes(3), now.plusMinutes(1));
+
+        assertThat(failed).isEqualTo(1);
+        assertThat(status(target)).isEqualTo(SessionStatus.FAILED);
+        assertThat(status(other)).isEqualTo(SessionStatus.GENERATING);
+        assertThat(sessionRepository.findStatusById(target.getId())).isEqualTo(SessionStatus.FAILED);
     }
 
     @Test

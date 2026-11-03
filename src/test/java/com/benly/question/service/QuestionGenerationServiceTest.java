@@ -58,6 +58,13 @@ class QuestionGenerationServiceTest {
         given(generationTx.markStarted(SESSION_ID)).willReturn(Optional.of(session));
     }
 
+    private void seeds(int count) {
+        SeedQuestion seed = mock(SeedQuestion.class);
+        given(seed.getContent()).willReturn("시드 질문");
+        given(seedQuestionRepository.findTop5ByCompanyTypeAndStage("SERVICE", "TECHNICAL"))
+                .willReturn(java.util.Collections.nCopies(count, seed));
+    }
+
     @Test
     @DisplayName("서류가 있으면 텍스트를 뽑아 Claude에 넘기고 질문을 저장한다")
     void generateWithDocument() {
@@ -117,10 +124,7 @@ class QuestionGenerationServiceTest {
         started();
         given(claudeClient.generateQuestions(anyString(), anyString(), anyString(), any(), any()))
                 .willThrow(new RuntimeException("Claude 오류"));
-        SeedQuestion seed = mock(SeedQuestion.class);
-        given(seed.getContent()).willReturn("시드 질문");
-        given(seedQuestionRepository.findTop5ByCompanyTypeAndStage("SERVICE", "TECHNICAL"))
-                .willReturn(List.of(seed, seed, seed, seed, seed));
+        seeds(5);
         given(generationTx.saveQuestions(eq(SESSION_ID), anyList(), eq(QuestionSourceType.SEED_FALLBACK)))
                 .willReturn(true);
 
@@ -128,6 +132,36 @@ class QuestionGenerationServiceTest {
 
         verify(generationTx).saveQuestions(eq(SESSION_ID), anyList(), eq(QuestionSourceType.SEED_FALLBACK));
         verify(generationTx, never()).markFailed(any());
+    }
+
+    @Test
+    @DisplayName("Claude가 빈 결과를 주면 시드 질문으로 대체한다")
+    void claudeEmptyFallsBackToSeed() {
+        started();
+        given(claudeClient.generateQuestions(anyString(), anyString(), anyString(), any(), any()))
+                .willReturn(List.of());
+        seeds(5);
+        given(generationTx.saveQuestions(eq(SESSION_ID), anyList(), eq(QuestionSourceType.SEED_FALLBACK)))
+                .willReturn(true);
+
+        questionGenerationService.generate(SESSION_ID, "채용공고", null);
+
+        verify(generationTx).saveQuestions(eq(SESSION_ID), anyList(), eq(QuestionSourceType.SEED_FALLBACK));
+        verify(generationTx, never()).markFailed(any());
+    }
+
+    @Test
+    @DisplayName("Claude와 시드 모두 비어 있으면 READY로 바꾸지 않고 실패 처리한다")
+    void emptyResultMarksFailed() {
+        started();
+        given(claudeClient.generateQuestions(anyString(), anyString(), anyString(), any(), any()))
+                .willReturn(List.of());
+        seeds(0);
+
+        questionGenerationService.generate(SESSION_ID, "채용공고", null);
+
+        verify(generationTx, never()).saveQuestions(any(), any(), any());
+        verify(generationTx).markFailed(SESSION_ID);
     }
 
     @Test
