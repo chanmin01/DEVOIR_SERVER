@@ -128,8 +128,8 @@ public class SessionService {
             throw new BusinessException(SessionErrorCode.SESSION_FORBIDDEN);
         }
 
-        boolean stale = session.getStatus() == SessionStatus.GENERATING
-                && session.getCreatedAt().isBefore(staleTaskPolicy.generationThreshold());
+        boolean stale = session.isGenerationStale(
+                staleTaskPolicy.generationThreshold(), staleTaskPolicy.generationQueueThreshold());
         return stale
                 ? new GenerationStatusResponse(SessionStatus.FAILED.name())
                 : GenerationStatusResponse.from(session);

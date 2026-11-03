@@ -27,7 +27,18 @@ public interface SessionRepository extends JpaRepository<Session, Long> {
                          @Param("newStatus") SessionStatus newStatus);
 
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE Session s SET s.status = com.benly.session.entity.SessionStatus.FAILED " +
-            "WHERE s.status = com.benly.session.entity.SessionStatus.GENERATING AND s.createdAt < :threshold")
-    int failStaleGenerating(@Param("threshold") LocalDateTime threshold);
+    @Query("UPDATE Session s SET s.generationStartedAt = :now " +
+            "WHERE s.id = :sessionId AND s.status = com.benly.session.entity.SessionStatus.GENERATING")
+    int markGenerationStarted(@Param("sessionId") Long sessionId,
+                              @Param("now") LocalDateTime now);
+
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            UPDATE Session s SET s.status = com.benly.session.entity.SessionStatus.FAILED
+             WHERE s.status = com.benly.session.entity.SessionStatus.GENERATING
+               AND ((s.generationStartedAt IS NOT NULL AND s.generationStartedAt < :startedThreshold)
+                 OR (s.generationStartedAt IS NULL AND s.createdAt < :queuedThreshold))
+            """)
+    int failStaleGenerating(@Param("startedThreshold") LocalDateTime startedThreshold,
+                            @Param("queuedThreshold") LocalDateTime queuedThreshold);
 }
