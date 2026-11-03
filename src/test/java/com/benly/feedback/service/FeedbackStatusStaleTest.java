@@ -21,6 +21,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class FeedbackStatusStaleTest {
@@ -52,7 +54,7 @@ class FeedbackStatusStaleTest {
     }
 
     @Test
-    @DisplayName("멈춘 채점은 상태 조회에서 FAILED로 내려간다")
+    @DisplayName("멈춘 채점은 상태 조회에서 FAILED로 내려가고 DB는 바꾸지 않는다")
     void staleReportedAsFailed() {
         LocalDateTime now = LocalDateTime.now();
         scoringSince(now.minusMinutes(10));
@@ -61,6 +63,8 @@ class FeedbackStatusStaleTest {
         FeedbackStatusResponse response = service.getStatus(USER_ID, SESSION_ID);
 
         assertThat(response.status()).isEqualTo(FeedbackStatus.FAILED);
+        verify(sessionFeedbackRepository).findBySession_Id(SESSION_ID);
+        verifyNoMoreInteractions(sessionFeedbackRepository);
     }
 
     @Test

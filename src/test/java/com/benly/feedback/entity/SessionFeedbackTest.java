@@ -7,26 +7,32 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 class SessionFeedbackTest {
 
-    private SessionFeedback scoringStartedAt(LocalDateTime startedAt) {
+    private SessionFeedback newScoring() {
         Session session = Session.create(mock(User.class), "SERVICE", "TECHNICAL", "백엔드", "카카오");
-        SessionFeedback sf = SessionFeedback.startScoring(session);
+        return SessionFeedback.startScoring(session);
+    }
+
+    private SessionFeedback scoringStartedAt(LocalDateTime startedAt) {
+        SessionFeedback sf = newScoring();
         ReflectionTestUtils.setField(sf, "scoringStartedAt", startedAt);
         return sf;
     }
 
     @Test
-    @DisplayName("채점 시작 시 시작 시각이 기록된다")
+    @DisplayName("채점 시작 시 시작 시각이 마이크로초 단위로 기록된다")
     void startRecordsTime() {
-        Session session = Session.create(mock(User.class), "SERVICE", "TECHNICAL", "백엔드", "카카오");
-        SessionFeedback sf = SessionFeedback.startScoring(session);
+        SessionFeedback sf = newScoring();
 
         assertThat(sf.getScoringStartedAt()).isNotNull();
+        assertThat(sf.getScoringStartedAt())
+                .isEqualTo(sf.getScoringStartedAt().truncatedTo(ChronoUnit.MICROS));
     }
 
     @Test
@@ -63,5 +69,34 @@ class SessionFeedbackTest {
         SessionFeedback sf = scoringStartedAt(null);
 
         assertThat(sf.isStale(LocalDateTime.now())).isFalse();
+    }
+
+    @Test
+    @DisplayName("시작 시각이 같으면 현재 시도다")
+    void currentAttempt() {
+        SessionFeedback sf = newScoring();
+
+        assertThat(sf.isCurrentAttempt(sf.getScoringStartedAt())).isTrue();
+    }
+
+    @Test
+    @DisplayName("재채점으로 시작 시각이 바뀌면 이전 시도는 현재 시도가 아니다")
+    void oldAttemptNotCurrent() {
+        SessionFeedback sf = newScoring();
+        LocalDateTime oldAttempt = sf.getScoringStartedAt();
+        ReflectionTestUtils.setField(sf, "scoringStartedAt", oldAttempt.plusMinutes(11));
+
+        assertThat(sf.isCurrentAttempt(oldAttempt)).isFalse();
+    }
+
+    @Test
+    @DisplayName("채점 중이 아니거나 시도 번호가 없으면 현재 시도가 아니다")
+    void notCurrentWhenFailedOrNull() {
+        SessionFeedback sf = newScoring();
+        LocalDateTime attempt = sf.getScoringStartedAt();
+
+        assertThat(sf.isCurrentAttempt(null)).isFalse();
+        sf.fail();
+        assertThat(sf.isCurrentAttempt(attempt)).isFalse();
     }
 }
