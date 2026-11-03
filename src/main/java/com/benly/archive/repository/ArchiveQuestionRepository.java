@@ -3,7 +3,10 @@ package com.benly.archive.repository;
 import com.benly.archive.dto.CompanyQuestionCount;
 import com.benly.archive.entity.ArchiveQuestion;
 import com.benly.session.entity.CompanyType;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -11,6 +14,7 @@ import org.springframework.data.domain.Pageable;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 public interface ArchiveQuestionRepository extends JpaRepository<ArchiveQuestion, Long> {
 
@@ -49,4 +53,21 @@ public interface ArchiveQuestionRepository extends JpaRepository<ArchiveQuestion
                                               @Param("cursorCount") Long cursorCount,
                                               @Param("cursorId") Long cursorId,
                                               Pageable pageable);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select q from ArchiveQuestion q where q.id = :questionId")
+    Optional<ArchiveQuestion> findByIdForUpdate(@Param("questionId") Long questionId);
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update ArchiveQuestion q set q.likeCount = q.likeCount + 1 where q.id = :questionId")
+    int increaseLikeCount(@Param("questionId") Long questionId);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update ArchiveQuestion q set q.likeCount = q.likeCount - 1 where q.id = :questionId and q.likeCount > 0")
+    int decreaseLikeCount(@Param("questionId") Long questionId);
+
+    @Query("select q.likeCount from ArchiveQuestion q where q.id = :questionId")
+    int findLikeCount(@Param("questionId") Long questionId);
+
+    @Query("select q.archive.id from ArchiveQuestion q where q.id = :questionId")
+    Optional<Long> findArchiveId(@Param("questionId") Long questionId);
 }

@@ -92,4 +92,11 @@ public class InterviewArchive extends BaseEntity {
     public YearMonth getInterviewedMonth() {
         return YearMonth.from(this.interviewedAt);
     }
+
+    public void addReport(int hideThreshold) {
+        this.reportCount++;
+        if (this.status == ArchiveStatus.VISIBLE && this.reportCount >= hideThreshold) {
+            this.status = ArchiveStatus.HIDDEN;
+        }
+    }
 }

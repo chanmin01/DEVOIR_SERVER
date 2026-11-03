@@ -4,7 +4,10 @@ import com.benly.archive.entity.InterviewArchive;
 import com.benly.archive.entity.InterviewFormat;
 import com.benly.session.entity.CompanyType;
 import com.benly.session.entity.InterviewStage;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -63,4 +66,16 @@ public interface InterviewArchiveRepository extends JpaRepository<InterviewArchi
                                        @Param("cursorLikes") Integer cursorLikes,
                                        @Param("cursorId") Long cursorId,
                                        Pageable pageable);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select a from InterviewArchive a where a.id = :archiveId")
+    Optional<InterviewArchive> findByIdForUpdate(@Param("archiveId") Long archiveId);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update InterviewArchive a set a.likeCount = a.likeCount + 1 where a.id = :archiveId")
+    int increaseLikeCount(@Param("archiveId") Long archiveId);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update InterviewArchive a set a.likeCount = a.likeCount - 1 where a.id = :archiveId and a.likeCount > 0")
+    int decreaseLikeCount(@Param("archiveId") Long archiveId);
 }
