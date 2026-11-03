@@ -40,6 +40,12 @@ public class QuestionGenerationService {
             String docText = extractDocumentText(docId);
             GeneratedQuestions generated = generateOrFallback(session, jd, docText);
 
+            if (generated.texts().isEmpty()) {
+                log.error("생성된 질문과 시드 질문이 모두 비어 있음 sessionId={}", sessionId);
+                generationTx.markFailed(sessionId);
+                return;
+            }
+
             boolean saved = generationTx.saveQuestions(sessionId, generated.texts(), generated.sourceType());
             if (!saved) {
                 log.warn("생성이 늦게 끝나서 결과를 버림 sessionId={}", sessionId);
@@ -50,18 +56,22 @@ public class QuestionGenerationService {
         }
     }
 
+    // Claude가 실패하거나 빈 결과를 주면 시드 질문으로 대체
     private GeneratedQuestions generateOrFallback(Session session, String jd, String docText) {
         try {
             List<String> texts = claudeClient.generateQuestions(
                     session.getCompanyType(), session.getStage(), session.getJobTitle(), jd, docText);
-            return new GeneratedQuestions(texts, QuestionSourceType.CLAUDE);
+            if (texts != null && !texts.isEmpty()) {
+                return new GeneratedQuestions(texts, QuestionSourceType.CLAUDE);
+            }
+            log.warn("Claude 질문 생성 결과가 비어 있어 시드 질문으로 대체 sessionId={}", session.getId());
         } catch (Exception e) {
             log.warn("Claude 질문 생성 실패, 시드 질문으로 대체 sessionId={}", session.getId(), e);
-            List<String> seeds = seedQuestionRepository
-                    .findTop5ByCompanyTypeAndStage(session.getCompanyType(), session.getStage())
-                    .stream().map(SeedQuestion::getContent).toList();
-            return new GeneratedQuestions(seeds, QuestionSourceType.SEED_FALLBACK);
         }
+        List<String> seeds = seedQuestionRepository
+                .findTop5ByCompanyTypeAndStage(session.getCompanyType(), session.getStage())
+                .stream().map(SeedQuestion::getContent).toList();
+        return new GeneratedQuestions(seeds, QuestionSourceType.SEED_FALLBACK);
     }
 
     // 서류 텍스트 추출 (실패해도 null 반환, 질문 생성은 계속)

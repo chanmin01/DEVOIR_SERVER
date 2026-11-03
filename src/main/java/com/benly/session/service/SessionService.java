@@ -118,8 +118,8 @@ public class SessionService {
         return SessionDetailResponse.from(session, current, total);
     }
 
-    // 질문 생성 상태 폴링
-    @Transactional(readOnly = true)
+    // 질문 생성 상태 폴링. 멈춘 생성은 여기서 FAILED로 기록한다
+    @Transactional
     public GenerationStatusResponse getGenerationStatus(Long userId, Long sessionId) {
         Session session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new BusinessException(SessionErrorCode.SESSION_NOT_FOUND));
@@ -128,11 +128,17 @@ public class SessionService {
             throw new BusinessException(SessionErrorCode.SESSION_FORBIDDEN);
         }
 
-        boolean stale = session.isGenerationStale(
-                staleTaskPolicy.generationThreshold(), staleTaskPolicy.generationQueueThreshold());
-        return stale
-                ? new GenerationStatusResponse(SessionStatus.FAILED.name())
-                : GenerationStatusResponse.from(session);
+        var startedThreshold = staleTaskPolicy.generationThreshold();
+        var queuedThreshold = staleTaskPolicy.generationQueueThreshold();
+        if (!session.isGenerationStale(startedThreshold, queuedThreshold)) {
+            return GenerationStatusResponse.from(session);
+        }
+
+        int failed = sessionRepository.failStaleGeneratingById(sessionId, startedThreshold, queuedThreshold);
+        SessionStatus status = failed > 0
+                ? SessionStatus.FAILED
+                : sessionRepository.findStatusById(sessionId);   // 그사이 워커가 끝냈으면 그 상태
+        return new GenerationStatusResponse(status.name());
     }
 
     // 채점 요청 (analyze)
