@@ -7,6 +7,9 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+
 @Entity
 @Getter
 @Table(name = "session_feedbacks")
@@ -37,6 +40,9 @@ public class SessionFeedback extends BaseEntity {
     @Column(name = "scoring_status", nullable = false, length = 20)
     private FeedbackStatus status;
 
+    @Column(name = "scoring_started_at")
+    private LocalDateTime scoringStartedAt;
+
     @Column(name = "filler_word_count")
     private Integer fillerWordCount;
 
@@ -52,6 +58,7 @@ public class SessionFeedback extends BaseEntity {
     private SessionFeedback(Session session) {
         this.session = session;
         this.status = FeedbackStatus.SCORING;
+        this.scoringStartedAt = newAttemptTime();
     }
 
     public static SessionFeedback startScoring(Session session) {
@@ -68,6 +75,7 @@ public class SessionFeedback extends BaseEntity {
         this.speechSpeed = null;
         this.speechSpeedNote = null;
         this.status = FeedbackStatus.SCORING;
+        this.scoringStartedAt = newAttemptTime();
     }
 
     public void complete(Integer totalScore, String summary,
@@ -79,10 +87,6 @@ public class SessionFeedback extends BaseEntity {
         this.status = FeedbackStatus.COMPLETED;
     }
 
-    /**
-     * TODO(후속 스프린트): 현재 미사용. Answer.durationSec이 침묵 포함이라 속도 계산 부정확.
-     *   OpenAI Whisper word 타임스탬프로 순수 발화시간 계산 후 이 메서드로 반영 고려
-     */
     public void applyDelivery(Integer speechSpeed, String speechSpeedNote,
                               Integer fillerWordCount, String fillerWordNote) {
         this.speechSpeed = speechSpeed;
@@ -107,4 +111,15 @@ public class SessionFeedback extends BaseEntity {
         return this.status == FeedbackStatus.FAILED;
     }
 
+    public boolean isStale(LocalDateTime threshold) {
+        return isScoring() && scoringStartedAt != null && scoringStartedAt.isBefore(threshold);
+    }
+
+    public static LocalDateTime newAttemptTime() {
+        return LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
+    }
+
+    public boolean isCurrentAttempt(LocalDateTime attempt) {
+        return isScoring() && attempt != null && attempt.equals(scoringStartedAt);
+    }
 }

@@ -20,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -83,17 +84,28 @@ public class FeedbackScoringTx {
     }
 
     @Transactional
-    public void saveResults(Long sessionId, int totalScore,
-                            List<ScoredTopic> topics, SessionSummary summary) {
+    public boolean saveResults(Long sessionId, LocalDateTime attempt, int totalScore,
+                               List<ScoredTopic> topics, SessionSummary summary) {
+        SessionFeedback sf = sessionFeedbackRepository.findBySessionIdForUpdate(sessionId)
+                .orElseThrow(() -> new BusinessException(FeedbackErrorCode.REPORT_NOT_FOUND));
+        if (!sf.isCurrentAttempt(attempt)) {
+            return false;
+        }
+
         scoreAxisRepository.deleteBySessionId(sessionId);
         feedbackRepository.deleteBySessionId(sessionId);
 
         topics.forEach(this::persistTopic);
 
-        SessionFeedback sf = sessionFeedbackRepository.findBySession_Id(sessionId)
-                .orElseThrow(() -> new BusinessException(FeedbackErrorCode.REPORT_NOT_FOUND));
         sf.complete(totalScore, summary.summary(),
                 summary.keyCoachingWeakness(), summary.keyCoachingAction());
+        return true;
+    }
+
+    /** 내 시도일 때만 실패 처리 */
+    @Transactional
+    public void markFailed(Long sessionId, LocalDateTime attempt) {
+        sessionFeedbackRepository.failAttempt(sessionId, attempt);
     }
 
     private void persistTopic(ScoredTopic topic) {
@@ -109,10 +121,4 @@ public class FeedbackScoringTx {
                 .forEach((code, value) -> scoreAxisRepository.save(ScoreAxis.create(feedback, code, value)));
     }
 
-    /** 실패 처리 */
-    @Transactional
-    public void markFailed(Long sessionId) {
-        sessionFeedbackRepository.findBySession_Id(sessionId)
-                .ifPresent(SessionFeedback::fail);
-    }
 }

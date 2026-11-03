@@ -14,6 +14,6 @@ public class FeedbackScoringEventListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onScoringRequested(ScoringRequestedEvent event) {
-        feedbackCommandService.score(event.sessionId());
+        feedbackCommandService.score(event.sessionId(), event.attempt());
     }
 }

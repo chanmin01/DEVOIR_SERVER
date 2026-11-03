@@ -7,6 +7,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+
 @Entity
 @Getter
 @Table(name = "sessions")
@@ -37,6 +39,9 @@ public class Session extends BaseEntity {
     @Column(name = "status", nullable = false, length = 20)
     private SessionStatus status;
 
+    @Column(name = "generation_started_at")
+    private LocalDateTime generationStartedAt;
+
     private Session(User user, String companyType, String stage, String jobTitle, String companyName, SessionStatus status) {
         this.user = user;
         this.companyType = companyType;
@@ -48,6 +53,15 @@ public class Session extends BaseEntity {
 
     public static Session create(User user, String companyType, String stage, String jobTitle, String companyName) {
         return new Session(user, companyType, stage, jobTitle, companyName, SessionStatus.GENERATING);
+    }
+
+    public boolean isGenerationStale(LocalDateTime startedThreshold, LocalDateTime queuedThreshold) {
+        if (status != SessionStatus.GENERATING) {
+            return false;
+        }
+        return generationStartedAt != null
+                ? generationStartedAt.isBefore(startedThreshold)
+                : getCreatedAt().isBefore(queuedThreshold);
     }
 
     public void markReady(){

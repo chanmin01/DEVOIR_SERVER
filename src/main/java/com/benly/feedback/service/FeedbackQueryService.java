@@ -2,13 +2,11 @@ package com.benly.feedback.service;
 
 import com.benly.feedback.dto.FeedbackReportResponse;
 import com.benly.feedback.dto.FeedbackStatusResponse;
-import com.benly.feedback.entity.AxisSet;
-import com.benly.feedback.entity.Feedback;
-import com.benly.feedback.entity.ScoreAxis;
-import com.benly.feedback.entity.SessionFeedback;
+import com.benly.feedback.entity.*;
 import com.benly.feedback.exception.FeedbackErrorCode;
 import com.benly.feedback.repository.*;
 import com.benly.global.exception.BusinessException;
+import com.benly.global.recovery.StaleTaskPolicy;
 import com.benly.question.entity.Answer;
 import com.benly.question.entity.Question;
 import com.benly.session.entity.Session;
@@ -32,6 +30,7 @@ public class FeedbackQueryService {
     private final QuestionReadRepository questionReadRepository;
     private final AnswerReadRepository answerReadRepository;
     private final FeedbackReportAssembler assembler;
+    private final StaleTaskPolicy staleTaskPolicy;
 
     public FeedbackStatusResponse getStatus(Long userId, Long sessionId) {
         validateOwnerShip(userId, sessionId);
@@ -39,7 +38,10 @@ public class FeedbackQueryService {
         SessionFeedback sf = sessionFeedbackRepository.findBySession_Id(sessionId)
                 .orElseThrow(() -> new BusinessException(FeedbackErrorCode.REPORT_NOT_FOUND));
 
-        return FeedbackStatusResponse.of(sessionId, sf.getStatus());
+        FeedbackStatus status = sf.isStale(staleTaskPolicy.scoringThreshold())
+                ? FeedbackStatus.FAILED
+                : sf.getStatus();
+        return FeedbackStatusResponse.of(sessionId, status);
     }
 
     public FeedbackReportResponse getReport(Long userId, Long sessionId) {
@@ -77,7 +79,6 @@ public class FeedbackQueryService {
                 null
         );
     }
-
 
 
     private Session validateOwnerShip(Long userId, Long sessionId) {

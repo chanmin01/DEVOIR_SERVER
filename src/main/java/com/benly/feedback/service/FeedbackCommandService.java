@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -25,7 +26,7 @@ public class FeedbackCommandService {
     private final FeedbackScoringTx scoringTx;   // DB는 이쪽에 위임
 
     @Async
-    public void score(Long sessionId) {
+    public void score(Long sessionId, LocalDateTime attempt) {
         try {
             long startedAt = System.currentTimeMillis();
 
@@ -41,7 +42,11 @@ public class FeedbackCommandService {
                     topics.stream().map(ScoredTopic::score).toList(), totalSkipped);
             long summaryDoneAt = System.currentTimeMillis();
 
-            scoringTx.saveResults(sessionId, totalScore, topics, summary);
+            boolean saved = scoringTx.saveResults(sessionId, attempt, totalScore, topics, summary);
+            if (!saved) {
+                log.warn("새 채점이 이미 시작돼서 이전 결과는 버림 sessionId={}", sessionId);
+                return;
+            }
 
             log.info("채점 단계 sessionId={} 주제수={} 주제채점={}ms 총평={}ms 전체={}ms",
                     sessionId,
@@ -52,7 +57,7 @@ public class FeedbackCommandService {
             log.info("채점 완료 sessionId={}, totalScore={}", sessionId, totalScore);
         } catch (Exception e) {
             log.error("채점 실패 sessionId={}", sessionId, e);
-            scoringTx.markFailed(sessionId);
+            scoringTx.markFailed(sessionId, attempt);
         }
     }
 
