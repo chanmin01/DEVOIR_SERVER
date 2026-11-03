@@ -19,6 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +40,7 @@ class FeedbackCommandServiceTest {
     private FeedbackCommandService service;
 
     private static final Long SESSION_ID = 8L;
+    private static final LocalDateTime ATTEMPT = LocalDateTime.of(2026, 11, 3, 12, 0);
 
     private ScoringPlan planWith(MainQuestionInput input) {
         AxisSet axisSet = AxisSet.PERSONALITY;
@@ -55,10 +57,7 @@ class FeedbackCommandServiceTest {
         return new MainQuestionScore("제목", m, null);
     }
 
-    @Test
-    @DisplayName("답변이 있는 문항은 AI로 채점하고 결과를 저장한다")
-    void scoreAnsweredTopic() {
-        // given
+    private void answeredPlan() {
         MainQuestionInput answered = new MainQuestionInput(1, "메인", "답변", List.of());
         ScoringPlan plan = planWith(answered);
         given(scoringTx.loadPlan(SESSION_ID)).willReturn(plan);
@@ -66,18 +65,27 @@ class FeedbackCommandServiceTest {
                 .willReturn(allHundred(plan.axes()));
         given(scoringClient.summarize(any(), anyInt(), anyList(), anyInt()))
                 .willReturn(new SessionSummary("총평", "약점", "행동"));
+    }
+
+    @Test
+    @DisplayName("답변이 있는 문항은 AI로 채점하고 결과를 저장한다")
+    void scoreAnsweredTopic() {
+        // given
+        answeredPlan();
+        given(scoringTx.saveResults(eq(SESSION_ID), eq(ATTEMPT), anyInt(), anyList(), any()))
+                .willReturn(true);
 
         // when
-        service.score(SESSION_ID);
+        service.score(SESSION_ID, ATTEMPT);
 
         // then
         verify(scoringClient, times(1)).scoreMainQuestion(any(), any(), any());
 
         ArgumentCaptor<List<ScoredTopic>> captor = ArgumentCaptor.forClass(List.class);
-        verify(scoringTx).saveResults(eq(SESSION_ID), eq(100), captor.capture(), any());
+        verify(scoringTx).saveResults(eq(SESSION_ID), eq(ATTEMPT), eq(100), captor.capture(), any());
         assertThat(captor.getValue()).hasSize(1);
         assertThat(captor.getValue().get(0).topicScore()).isEqualTo(100);
-        verify(scoringTx, never()).markFailed(anyLong());
+        verify(scoringTx, never()).markFailed(anyLong(), any());
     }
 
     @Test
@@ -88,17 +96,19 @@ class FeedbackCommandServiceTest {
         given(scoringTx.loadPlan(SESSION_ID)).willReturn(planWith(skipped));
         given(scoringClient.summarize(any(), anyInt(), anyList(), anyInt()))
                 .willReturn(new SessionSummary("총평", "약점", "행동"));
+        given(scoringTx.saveResults(eq(SESSION_ID), eq(ATTEMPT), anyInt(), anyList(), any()))
+                .willReturn(true);
 
         // when
-        service.score(SESSION_ID);
+        service.score(SESSION_ID, ATTEMPT);
 
         // then
         verify(scoringClient, never()).scoreMainQuestion(any(), any(), any());
-        verify(scoringTx).saveResults(eq(SESSION_ID), eq(0), anyList(), any());
+        verify(scoringTx).saveResults(eq(SESSION_ID), eq(ATTEMPT), eq(0), anyList(), any());
     }
 
     @Test
-    @DisplayName("채점 중 예외가 나면 저장 대신 실패 처리한다")
+    @DisplayName("채점 중 예외가 나면 저장 대신 내 시도만 실패 처리한다")
     void markFailedOnError() {
         // given
         MainQuestionInput answered = new MainQuestionInput(1, "메인", "답변", List.of());
@@ -107,10 +117,26 @@ class FeedbackCommandServiceTest {
                 .willThrow(new RuntimeException("AI 호출 실패"));
 
         // when
-        service.score(SESSION_ID);
+        service.score(SESSION_ID, ATTEMPT);
 
         // then
-        verify(scoringTx).markFailed(SESSION_ID);
-        verify(scoringTx, never()).saveResults(anyLong(), anyInt(), anyList(), any());
+        verify(scoringTx).markFailed(SESSION_ID, ATTEMPT);
+        verify(scoringTx, never()).saveResults(anyLong(), any(), anyInt(), anyList(), any());
+    }
+
+    @Test
+    @DisplayName("새 채점이 이미 시작됐으면 결과를 버리고 실패 처리도 하지 않는다")
+    void discardWhenAttemptReplaced() {
+        // given
+        answeredPlan();
+        given(scoringTx.saveResults(eq(SESSION_ID), eq(ATTEMPT), anyInt(), anyList(), any()))
+                .willReturn(false);
+
+        // when
+        service.score(SESSION_ID, ATTEMPT);
+
+        // then
+        verify(scoringTx).saveResults(eq(SESSION_ID), eq(ATTEMPT), anyInt(), anyList(), any());
+        verify(scoringTx, never()).markFailed(anyLong(), any());
     }
 }

@@ -1,10 +1,10 @@
 package com.benly.session.service;
 
 import com.benly.global.exception.BusinessException;
+import com.benly.global.recovery.StaleTaskPolicy;
 import com.benly.question.dto.CurrentQuestionResponse;
 import com.benly.question.entity.Question;
 import com.benly.question.repository.QuestionRepository;
-import com.benly.session.dto.AnalyzeResponse;
 import com.benly.session.dto.GenerationStatusResponse;
 import com.benly.session.dto.SessionDetailResponse;
 import com.benly.session.entity.Session;
@@ -22,15 +22,18 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.util.List;
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -38,6 +41,7 @@ class SessionQueryTest {
 
     @Mock private SessionRepository sessionRepository;
     @Mock private QuestionRepository questionRepository;
+    @Mock private StaleTaskPolicy staleTaskPolicy;
 
     @InjectMocks
     private SessionService sessionService;
@@ -51,12 +55,23 @@ class SessionQueryTest {
         return user;
     }
 
-    // P3 리뷰 반영: Mock 대신 실제 Session 객체를 생성하는 헬퍼 메서드
     private Session createRealSession(User owner, SessionStatus status) {
         Session session = Session.create(owner, "SERVICE", "TECHNICAL", "백엔드", "카카오");
         ReflectionTestUtils.setField(session, "id", SESSION_ID);
-        ReflectionTestUtils.setField(session, "status", status); // 상태 강제 주입
+        ReflectionTestUtils.setField(session, "status", status);
         return session;
+    }
+
+    private void generatingSession(LocalDateTime createdAt, LocalDateTime startedAt) {
+        Session session = createRealSession(mockUser(USER_ID), SessionStatus.GENERATING);
+        ReflectionTestUtils.setField(session, "createdAt", createdAt);
+        ReflectionTestUtils.setField(session, "generationStartedAt", startedAt);
+        given(sessionRepository.findById(SESSION_ID)).willReturn(Optional.of(session));
+    }
+
+    private void thresholds(LocalDateTime now) {
+        given(staleTaskPolicy.generationThreshold()).willReturn(now.minusMinutes(3));
+        given(staleTaskPolicy.generationQueueThreshold()).willReturn(now.minusMinutes(15));
     }
 
     // ===== 세션 조회 =====
@@ -68,15 +83,13 @@ class SessionQueryTest {
         Session session = createRealSession(user, SessionStatus.IN_PROGRESS);
 
         given(sessionRepository.findById(SESSION_ID)).willReturn(Optional.of(session));
-
-        // P2 리뷰 반영: 리스트를 가져오는 대신 COUNT 값 반환을 모킹
         given(questionRepository.countBySessionAndParentIsNull(session)).willReturn(5);
         given(questionRepository.countUnansweredMainsBySessionId(SESSION_ID)).willReturn(2);
 
         SessionDetailResponse response = sessionService.getSession(USER_ID, SESSION_ID);
 
         assertThat(response.mainProgress().total()).isEqualTo(5);
-        assertThat(response.mainProgress().current()).isEqualTo(3);   // 5 - 2
+        assertThat(response.mainProgress().current()).isEqualTo(3);
         assertThat(response.status()).isEqualTo("IN_PROGRESS");
     }
 
@@ -112,12 +125,80 @@ class SessionQueryTest {
     void getGenerationStatus_success() {
         User user = mockUser(USER_ID);
         Session session = createRealSession(user, SessionStatus.READY);
-
+        thresholds(LocalDateTime.now());
         given(sessionRepository.findById(SESSION_ID)).willReturn(Optional.of(session));
 
         GenerationStatusResponse response = sessionService.getGenerationStatus(USER_ID, SESSION_ID);
 
         assertThat(response.status()).isEqualTo("READY");
+        verify(sessionRepository, never()).failStaleGeneratingById(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("생성 상태 폴링 - 시작 후 기준 시간을 넘기면 DB에 FAILED를 기록하고 FAILED")
+    void getGenerationStatus_startedStale() {
+        LocalDateTime now = LocalDateTime.now();
+        thresholds(now);
+        generatingSession(now.minusMinutes(5), now.minusMinutes(4));
+        given(sessionRepository.failStaleGeneratingById(eq(SESSION_ID), any(), any())).willReturn(1);
+
+        GenerationStatusResponse response = sessionService.getGenerationStatus(USER_ID, SESSION_ID);
+
+        assertThat(response.status()).isEqualTo("FAILED");
+        verify(sessionRepository).failStaleGeneratingById(SESSION_ID, now.minusMinutes(3), now.minusMinutes(15));
+    }
+
+    @Test
+    @DisplayName("생성 상태 폴링 - 그사이 워커가 끝냈으면 DB의 현재 상태를 응답")
+    void getGenerationStatus_finishedMeanwhile() {
+        LocalDateTime now = LocalDateTime.now();
+        thresholds(now);
+        generatingSession(now.minusMinutes(5), now.minusMinutes(4));
+        given(sessionRepository.failStaleGeneratingById(eq(SESSION_ID), any(), any())).willReturn(0);
+        given(sessionRepository.findStatusById(SESSION_ID)).willReturn(SessionStatus.READY);
+
+        GenerationStatusResponse response = sessionService.getGenerationStatus(USER_ID, SESSION_ID);
+
+        assertThat(response.status()).isEqualTo("READY");
+    }
+
+    @Test
+    @DisplayName("생성 상태 폴링 - 큐에서 오래 기다렸어도 시작한 지 얼마 안 됐으면 GENERATING")
+    void getGenerationStatus_startedRecently() {
+        LocalDateTime now = LocalDateTime.now();
+        thresholds(now);
+        generatingSession(now.minusMinutes(10), now.minusMinutes(1));
+
+        GenerationStatusResponse response = sessionService.getGenerationStatus(USER_ID, SESSION_ID);
+
+        assertThat(response.status()).isEqualTo("GENERATING");
+        verify(sessionRepository, never()).failStaleGeneratingById(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("생성 상태 폴링 - 시작 전이면 대기 기준 시간 전까지 GENERATING")
+    void getGenerationStatus_queued() {
+        LocalDateTime now = LocalDateTime.now();
+        thresholds(now);
+        generatingSession(now.minusMinutes(10), null);
+
+        GenerationStatusResponse response = sessionService.getGenerationStatus(USER_ID, SESSION_ID);
+
+        assertThat(response.status()).isEqualTo("GENERATING");
+        verify(sessionRepository, never()).failStaleGeneratingById(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("생성 상태 폴링 - 시작 전인데 대기 기준 시간을 넘기면 DB에 FAILED를 기록하고 FAILED")
+    void getGenerationStatus_queuedStale() {
+        LocalDateTime now = LocalDateTime.now();
+        thresholds(now);
+        generatingSession(now.minusMinutes(20), null);
+        given(sessionRepository.failStaleGeneratingById(eq(SESSION_ID), any(), any())).willReturn(1);
+
+        GenerationStatusResponse response = sessionService.getGenerationStatus(USER_ID, SESSION_ID);
+
+        assertThat(response.status()).isEqualTo("FAILED");
     }
 
     // ===== analyze =====
@@ -129,14 +210,11 @@ class SessionQueryTest {
         Session session = createRealSession(user, SessionStatus.COMPLETED);
 
         given(sessionRepository.findById(SESSION_ID)).willReturn(Optional.of(session));
-
-        // P1 리뷰 반영: 원자적 업데이트 쿼리가 성공적으로(1 반환) 수행됨을 모킹
         given(sessionRepository.updateStatusIfCurrent(SESSION_ID, SessionStatus.COMPLETED, SessionStatus.ANALYZING))
                 .willReturn(1);
 
         sessionService.analyze(USER_ID, SESSION_ID);
 
-        // P3 리뷰 반영: verify()가 아니라, 실제 객체의 상태가 제대로 변경되었는지 단언(assert)
         assertThat(session.getStatus()).isEqualTo(SessionStatus.ANALYZING);
     }
 
@@ -147,8 +225,6 @@ class SessionQueryTest {
         Session session = createRealSession(user, SessionStatus.IN_PROGRESS);
 
         given(sessionRepository.findById(SESSION_ID)).willReturn(Optional.of(session));
-
-        // P1 리뷰 반영: 다른 상태이므로 업데이트 실패(0 반환)함을 모킹
         given(sessionRepository.updateStatusIfCurrent(SESSION_ID, SessionStatus.COMPLETED, SessionStatus.ANALYZING))
                 .willReturn(0);
 
@@ -172,8 +248,6 @@ class SessionQueryTest {
         given(followUp.getSeq()).willReturn(1);
         given(followUp.getContent()).willReturn("꼬리질문");
         given(followUp.getType()).willReturn("FOLLOW_UP");
-
-        // 수정됨: 새롭게 추가된 단건 조회 메서드 모킹
         given(questionRepository.findFirstUnansweredFollowUpBySessionId(SESSION_ID))
                 .willReturn(Optional.of(followUp));
 
@@ -195,8 +269,6 @@ class SessionQueryTest {
         given(main.getSeq()).willReturn(2);
         given(main.getContent()).willReturn("메인질문");
         given(main.getType()).willReturn("MAIN");
-
-        // 수정됨: 꼬리가 Optional.empty()를 반환하고 메인이 값을 반환하도록 모킹
         given(questionRepository.findFirstUnansweredFollowUpBySessionId(SESSION_ID))
                 .willReturn(Optional.empty());
         given(questionRepository.findFirstUnansweredMainBySessionId(SESSION_ID))
@@ -216,14 +288,11 @@ class SessionQueryTest {
         User user = mockUser(USER_ID);
         Session session = createRealSession(user, SessionStatus.IN_PROGRESS);
         given(sessionRepository.findById(SESSION_ID)).willReturn(Optional.of(session));
-
-        // 수정됨: updateStatusIfIn 메서드가 성공(1)을 반환하도록 모킹
         given(sessionRepository.updateStatusIfIn(eq(SESSION_ID), anyList(), eq(SessionStatus.CANCELED)))
                 .willReturn(1);
 
         sessionService.cancelSession(USER_ID, SESSION_ID);
 
-        // 실제 객체의 상태 변경 여부(CANCELED)를 직접 검증
         assertThat(session.getStatus()).isEqualTo(SessionStatus.CANCELED);
     }
 
@@ -231,10 +300,8 @@ class SessionQueryTest {
     @DisplayName("세션 폐기 실패 - COMPLETED는 폐기 불가")
     void cancelSession_completed_fails() {
         User user = mockUser(USER_ID);
-        Session session = createRealSession(user, SessionStatus.COMPLETED);  // 완료된 건 폐기 불가
+        Session session = createRealSession(user, SessionStatus.COMPLETED);
         given(sessionRepository.findById(SESSION_ID)).willReturn(Optional.of(session));
-
-        // 수정됨: 조건에 맞지 않아 업데이트가 실패(0)하도록 모킹
         given(sessionRepository.updateStatusIfIn(eq(SESSION_ID), anyList(), eq(SessionStatus.CANCELED)))
                 .willReturn(0);
 
