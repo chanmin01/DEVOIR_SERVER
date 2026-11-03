@@ -2,12 +2,17 @@ package com.benly.archive.controller;
 
 import com.benly.archive.dto.ArchiveCreateRequest;
 import com.benly.archive.dto.ArchiveCreateResponse;
+import com.benly.archive.dto.ArchiveLikeResponse;
 import com.benly.archive.dto.ArchiveListResponse;
+import com.benly.archive.dto.ArchiveReportRequest;
 import com.benly.archive.dto.ArchiveSearch;
 import com.benly.archive.dto.CompanyListResponse;
 import com.benly.archive.entity.InterviewFormat;
+import com.benly.archive.service.ArchiveDeleteService;
+import com.benly.archive.service.ArchiveLikeService;
 import com.benly.archive.service.ArchiveQueryService;
 import com.benly.archive.service.ArchiveRegisterService;
+import com.benly.archive.service.ArchiveReportService;
 import com.benly.archive.support.ArchiveSort;
 import com.benly.global.common.ApiResponse;
 import com.benly.session.entity.CompanyType;
@@ -25,6 +30,9 @@ public class ArchiveController {
 
     private final ArchiveRegisterService archiveRegisterService;
     private final ArchiveQueryService archiveQueryService;
+    private final ArchiveLikeService archiveLikeService;
+    private final ArchiveReportService archiveReportService;
+    private final ArchiveDeleteService archiveDeleteService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -55,5 +63,37 @@ public class ArchiveController {
             @RequestParam(required = false) String cursor,
             @RequestParam(required = false) Integer size) {
         return ApiResponse.success("조회에 성공했습니다.", archiveQueryService.getCompanies(companyType, cursor, size));
+    }
+
+    @DeleteMapping("/{archiveId}")
+    public ApiResponse<Void> delete(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long archiveId) {
+        archiveDeleteService.delete(userId, archiveId);
+        return ApiResponse.success("등록한 질문을 삭제했어요.");
+    }
+
+    @PostMapping("/{archiveId}/reports")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<Void> report(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long archiveId,
+            @Valid @RequestBody ArchiveReportRequest request) {
+        archiveReportService.report(userId, archiveId, request.toReason());
+        return ApiResponse.created("신고가 접수됐어요.", null);
+    }
+
+    @PostMapping("/questions/{questionId}/like")
+    public ApiResponse<ArchiveLikeResponse> like(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long questionId) {
+        return ApiResponse.success("질문을 저장했어요.", archiveLikeService.like(userId, questionId));
+    }
+
+    @DeleteMapping("/questions/{questionId}/like")
+    public ApiResponse<ArchiveLikeResponse> unlike(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long questionId) {
+        return ApiResponse.success("저장을 취소했어요.", archiveLikeService.unlike(userId, questionId));
     }
 }
