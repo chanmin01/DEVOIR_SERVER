@@ -53,12 +53,17 @@ class ArchiveLikeServiceTest {
         given(questionRepository.findByIdForUpdate(QUESTION_ID)).willReturn(Optional.of(question));
     }
 
+    private void counts(int question, int archive) {
+        given(questionRepository.findLikeCount(QUESTION_ID)).willReturn(question);
+        given(archiveRepository.findLikeCount(ARCHIVE_ID)).willReturn(archive);
+    }
+
     @Test
-    @DisplayName("처음 누르면 하트를 저장하고 질문과 면접 기록의 하트 수를 같이 올린다")
+    @DisplayName("처음 누르면 하트를 저장하고 질문 하트 수와 면접 기록 합계를 같이 올려 둘 다 응답한다")
     void likeFirstTime() {
         question(true);
         given(likeRepository.existsByUserIdAndQuestionId(USER_ID, QUESTION_ID)).willReturn(false);
-        given(questionRepository.findLikeCount(QUESTION_ID)).willReturn(22);
+        counts(22, 40);
 
         ArchiveLikeResponse response = service.like(USER_ID, QUESTION_ID);
 
@@ -67,6 +72,7 @@ class ArchiveLikeServiceTest {
         verify(archiveRepository).increaseLikeCount(ARCHIVE_ID);
         assertThat(response.liked()).isTrue();
         assertThat(response.likeCount()).isEqualTo(22);
+        assertThat(response.archiveLikeCount()).isEqualTo(40);
     }
 
     @Test
@@ -74,7 +80,7 @@ class ArchiveLikeServiceTest {
     void likeIdempotent() {
         question(true);
         given(likeRepository.existsByUserIdAndQuestionId(USER_ID, QUESTION_ID)).willReturn(true);
-        given(questionRepository.findLikeCount(QUESTION_ID)).willReturn(22);
+        counts(22, 40);
 
         ArchiveLikeResponse response = service.like(USER_ID, QUESTION_ID);
 
@@ -95,11 +101,14 @@ class ArchiveLikeServiceTest {
     }
 
     @Test
-    @DisplayName("없는 질문이면 404")
-    void likeNotFound() {
+    @DisplayName("없는 질문이면 하트와 취소 모두 404")
+    void notFound() {
         given(questionRepository.findByIdForUpdate(QUESTION_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.like(USER_ID, QUESTION_ID))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ArchiveErrorCode.QUESTION_NOT_FOUND);
+        assertThatThrownBy(() -> service.unlike(USER_ID, QUESTION_ID))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ArchiveErrorCode.QUESTION_NOT_FOUND);
     }
@@ -116,24 +125,26 @@ class ArchiveLikeServiceTest {
     }
 
     @Test
-    @DisplayName("하트를 지웠을 때만 질문과 면접 기록의 하트 수를 내린다")
+    @DisplayName("취소도 질문 행을 잠그고, 지웠을 때만 두 숫자를 내린다")
     void unlikeDeleted() {
-        given(questionRepository.findArchiveId(QUESTION_ID)).willReturn(Optional.of(ARCHIVE_ID));
+        question(true);
         given(likeRepository.deleteByUserIdAndQuestionId(USER_ID, QUESTION_ID)).willReturn(1);
-        given(questionRepository.findLikeCount(QUESTION_ID)).willReturn(21);
+        counts(21, 39);
 
         ArchiveLikeResponse response = service.unlike(USER_ID, QUESTION_ID);
 
+        verify(questionRepository).findByIdForUpdate(QUESTION_ID);
         verify(questionRepository).decreaseLikeCount(QUESTION_ID);
         verify(archiveRepository).decreaseLikeCount(ARCHIVE_ID);
         assertThat(response.liked()).isFalse();
         assertThat(response.likeCount()).isEqualTo(21);
+        assertThat(response.archiveLikeCount()).isEqualTo(39);
     }
 
     @Test
     @DisplayName("안 눌렀던 질문을 취소하면 숫자를 건드리지 않는다")
     void unlikeIdempotent() {
-        given(questionRepository.findArchiveId(QUESTION_ID)).willReturn(Optional.of(ARCHIVE_ID));
+        question(true);
         given(likeRepository.deleteByUserIdAndQuestionId(USER_ID, QUESTION_ID)).willReturn(0);
 
         ArchiveLikeResponse response = service.unlike(USER_ID, QUESTION_ID);
@@ -144,12 +155,14 @@ class ArchiveLikeServiceTest {
     }
 
     @Test
-    @DisplayName("없는 질문을 취소하면 404")
-    void unlikeNotFound() {
-        given(questionRepository.findArchiveId(QUESTION_ID)).willReturn(Optional.empty());
+    @DisplayName("숨김이나 삭제된 기록의 질문도 취소는 허용한다")
+    void unlikeHiddenAllowed() {
+        question(false);
+        given(likeRepository.deleteByUserIdAndQuestionId(USER_ID, QUESTION_ID)).willReturn(1);
 
-        assertThatThrownBy(() -> service.unlike(USER_ID, QUESTION_ID))
-                .isInstanceOf(BusinessException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ArchiveErrorCode.QUESTION_NOT_FOUND);
+        ArchiveLikeResponse response = service.unlike(USER_ID, QUESTION_ID);
+
+        verify(questionRepository).decreaseLikeCount(QUESTION_ID);
+        assertThat(response.liked()).isFalse();
     }
 }

@@ -48,45 +48,45 @@ class ArchiveLikeReportIntegrationTest {
         return archive;
     }
 
-    private InterviewArchive reload(InterviewArchive a) {
-        return archiveRepository.findById(a.getId()).orElseThrow();
-    }
-
     @Test
     @DisplayName("질문 두 개에 하트하면 면접 기록 합계가 2, 하나 취소하면 1")
     void likeCountSync() {
-        User owner = user();
         User viewer = user();
-        InterviewArchive archive = archive(owner);
+        InterviewArchive archive = archive(user());
         var questions = questionRepository.findByArchiveIdOrderBySeqAsc(archive.getId());
+        Long q1 = questions.get(0).getId();
+        Long q2 = questions.get(1).getId();
 
-        likeService.like(viewer.getId(), questions.get(0).getId());
-        likeService.like(viewer.getId(), questions.get(1).getId());
-        likeService.like(viewer.getId(), questions.get(1).getId());   // 연타
+        likeService.like(viewer.getId(), q1);
+        likeService.like(viewer.getId(), q2);
+        var again = likeService.like(viewer.getId(), q2);   // 연타
 
-        assertThat(reload(archive).getLikeCount()).isEqualTo(2);
-        assertThat(questionRepository.findLikeCount(questions.get(1).getId())).isEqualTo(1);
+        assertThat(again.archiveLikeCount()).isEqualTo(2);
+        assertThat(archiveRepository.findLikeCount(archive.getId())).isEqualTo(2);
+        assertThat(questionRepository.findLikeCount(q2)).isEqualTo(1);
 
-        likeService.unlike(viewer.getId(), questions.get(1).getId());
-        likeService.unlike(viewer.getId(), questions.get(1).getId());   // 연타
+        likeService.unlike(viewer.getId(), q2);
+        var undo = likeService.unlike(viewer.getId(), q2);   // 연타
 
-        assertThat(reload(archive).getLikeCount()).isEqualTo(1);
-        assertThat(questionRepository.findLikeCount(questions.get(1).getId())).isZero();
+        assertThat(undo.likeCount()).isZero();
+        assertThat(undo.archiveLikeCount()).isEqualTo(1);
+        assertThat(archiveRepository.findLikeCount(archive.getId())).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("서로 다른 세 명이 신고하면 숨김으로 바뀐다")
+    @DisplayName("세 명이 신고하면 숨김으로 바뀌고, 숨김 뒤에도 신고는 쌓인다")
     void hideAfterThreeReports() {
         InterviewArchive archive = archive(user());
 
         reportService.report(user().getId(), archive.getId(), ReportReason.AD);
         reportService.report(user().getId(), archive.getId(), ReportReason.COPIED);
-        assertThat(reload(archive).getStatus()).isEqualTo(ArchiveStatus.VISIBLE);
+        assertThat(archive.getStatus()).isEqualTo(ArchiveStatus.VISIBLE);
 
         reportService.report(user().getId(), archive.getId(), ReportReason.FALSE_INFO);
+        assertThat(archive.getStatus()).isEqualTo(ArchiveStatus.HIDDEN);
 
-        InterviewArchive reloaded = reload(archive);
-        assertThat(reloaded.getReportCount()).isEqualTo(3);
-        assertThat(reloaded.getStatus()).isEqualTo(ArchiveStatus.HIDDEN);
+        reportService.report(user().getId(), archive.getId(), ReportReason.NDA_VIOLATION);
+        assertThat(archive.getReportCount()).isEqualTo(4);
+        assertThat(archive.getStatus()).isEqualTo(ArchiveStatus.HIDDEN);
     }
 }
