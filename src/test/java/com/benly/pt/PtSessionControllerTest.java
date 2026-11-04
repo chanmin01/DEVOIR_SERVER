@@ -8,6 +8,7 @@ import com.benly.pt.controller.PtSessionController;
 import com.benly.pt.dto.*;
 import com.benly.pt.entity.PtPhase;
 import com.benly.pt.exception.*;
+import com.benly.pt.service.PtProgressService;
 import com.benly.pt.service.PtSessionService;
 import com.benly.session.entity.SessionStatus;
 import com.benly.user.entity.UserType;
@@ -49,6 +50,11 @@ class PtSessionControllerTest {
         @Bean
         JwtProvider jwtProvider() {
             return mock(JwtProvider.class);
+        }
+
+        @Bean
+        PtProgressService progressService() {
+            return mock(PtProgressService.class);
         }
 
         @Bean
@@ -100,7 +106,12 @@ class PtSessionControllerTest {
                         now,
                         now.plusSeconds(1200),
                         now,
-                        null
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "SELECT_TRACK"
                 ));
 
         mvc.perform(post("/api/v1/pt/sessions")
