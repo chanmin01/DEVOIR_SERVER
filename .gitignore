@@ -42,3 +42,7 @@ out/
 # Mac OS
 .DS_Store
 **/.DS_Store
+
+
+/benly-before-history-fix.sql
+/benly-before-renumber.sql
