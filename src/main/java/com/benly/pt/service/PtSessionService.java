@@ -127,7 +127,7 @@ public class PtSessionService {
                 )
                 .orElseThrow(() ->
                         new BusinessException(
-                                PtErrorCode.NO_TASK
+                                PtErrorCode.TASK_NOT_AVAILABLE
                         )
                 );
 

@@ -68,7 +68,7 @@ class PtMigrationTest {
 
         new ResourceDatabasePopulator(
                 new ClassPathResource(
-                        "db/migration/V4__pt_task_and_session.sql"
+                        "db/migration/V6__pt_task_and_session.sql"
                 )
         ).execute(dataSource);
 
