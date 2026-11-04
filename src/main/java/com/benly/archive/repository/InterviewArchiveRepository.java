@@ -82,4 +82,16 @@ public interface InterviewArchiveRepository extends JpaRepository<InterviewArchi
     @Query("select a.likeCount from InterviewArchive a where a.id = :archiveId")
     int findLikeCount(@Param("archiveId") Long archiveId);
 
+    @Query("""
+            select a from InterviewArchive a
+            join fetch a.company
+            where a.user.id = :userId
+              and a.deletedAt is null
+              and (:cursorId is null or a.id < :cursorId)
+            order by a.id desc
+            """)
+    List<InterviewArchive> findMine(@Param("userId") Long userId,
+                                    @Param("cursorId") Long cursorId,
+                                    Pageable pageable);
+
 }
