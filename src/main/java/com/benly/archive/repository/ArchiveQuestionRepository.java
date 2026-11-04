@@ -57,17 +57,15 @@ public interface ArchiveQuestionRepository extends JpaRepository<ArchiveQuestion
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select q from ArchiveQuestion q where q.id = :questionId")
     Optional<ArchiveQuestion> findByIdForUpdate(@Param("questionId") Long questionId);
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Modifying(flushAutomatically = true)
     @Query("update ArchiveQuestion q set q.likeCount = q.likeCount + 1 where q.id = :questionId")
     int increaseLikeCount(@Param("questionId") Long questionId);
 
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Modifying(flushAutomatically = true)
     @Query("update ArchiveQuestion q set q.likeCount = q.likeCount - 1 where q.id = :questionId and q.likeCount > 0")
     int decreaseLikeCount(@Param("questionId") Long questionId);
 
     @Query("select q.likeCount from ArchiveQuestion q where q.id = :questionId")
     int findLikeCount(@Param("questionId") Long questionId);
 
-    @Query("select q.archive.id from ArchiveQuestion q where q.id = :questionId")
-    Optional<Long> findArchiveId(@Param("questionId") Long questionId);
 }

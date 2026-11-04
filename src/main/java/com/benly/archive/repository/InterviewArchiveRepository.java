@@ -71,11 +71,15 @@ public interface InterviewArchiveRepository extends JpaRepository<InterviewArchi
     @Query("select a from InterviewArchive a where a.id = :archiveId")
     Optional<InterviewArchive> findByIdForUpdate(@Param("archiveId") Long archiveId);
 
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Modifying(flushAutomatically = true)
     @Query("update InterviewArchive a set a.likeCount = a.likeCount + 1 where a.id = :archiveId")
     int increaseLikeCount(@Param("archiveId") Long archiveId);
 
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Modifying(flushAutomatically = true)
     @Query("update InterviewArchive a set a.likeCount = a.likeCount - 1 where a.id = :archiveId and a.likeCount > 0")
     int decreaseLikeCount(@Param("archiveId") Long archiveId);
+
+    @Query("select a.likeCount from InterviewArchive a where a.id = :archiveId")
+    int findLikeCount(@Param("archiveId") Long archiveId);
+
 }

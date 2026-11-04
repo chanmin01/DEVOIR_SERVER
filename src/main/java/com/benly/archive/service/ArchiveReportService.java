@@ -6,6 +6,7 @@ import com.benly.archive.entity.ReportReason;
 import com.benly.archive.exception.ArchiveErrorCode;
 import com.benly.archive.repository.ArchiveReportRepository;
 import com.benly.archive.repository.InterviewArchiveRepository;
+import com.benly.archive.support.ArchiveReportPolicy;
 import com.benly.global.exception.BusinessException;
 import com.benly.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -16,11 +17,10 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ArchiveReportService {
 
-    static final int HIDE_THRESHOLD = 3;
-
     private final InterviewArchiveRepository archiveRepository;
     private final ArchiveReportRepository reportRepository;
     private final UserRepository userRepository;
+    private final ArchiveReportPolicy reportPolicy;
 
     @Transactional
     public void report(Long userId, Long archiveId, ReportReason reason) {
@@ -28,7 +28,7 @@ public class ArchiveReportService {
             throw new BusinessException(ArchiveErrorCode.INVALID_PATH);
         }
         InterviewArchive archive = archiveRepository.findByIdForUpdate(archiveId)
-                .filter(InterviewArchive::isVisible)
+                .filter(a -> !a.isDeleted())
                 .orElseThrow(() -> new BusinessException(ArchiveErrorCode.ARCHIVE_NOT_FOUND));
 
         if (archive.isOwnedBy(userId)) {
@@ -39,6 +39,6 @@ public class ArchiveReportService {
         }
 
         reportRepository.save(ArchiveReport.of(userRepository.getReferenceById(userId), archive, reason));
-        archive.addReport(HIDE_THRESHOLD);
+        archive.addReport(reportPolicy.hideThreshold());
     }
 }

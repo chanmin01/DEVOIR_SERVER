@@ -22,12 +22,13 @@ public class ArchiveLikeService {
     private final ArchiveLikeRepository likeRepository;
     private final UserRepository userRepository;
 
+    // 이미 눌렀으면 그대로 성공. 숨김, 삭제된 기록의 질문은 막는다
     @Transactional
     public ArchiveLikeResponse like(Long userId, Long questionId) {
-        validatePath(questionId);
-        ArchiveQuestion question = questionRepository.findByIdForUpdate(questionId)
-                .filter(q -> q.getArchive().isVisible())
-                .orElseThrow(() -> new BusinessException(ArchiveErrorCode.QUESTION_NOT_FOUND));
+        ArchiveQuestion question = lockQuestion(questionId);
+        if (!question.getArchive().isVisible()) {
+            throw new BusinessException(ArchiveErrorCode.QUESTION_NOT_FOUND);
+        }
         Long archiveId = question.getArchive().getId();
 
         if (!likeRepository.existsByUserIdAndQuestionId(userId, questionId)) {
@@ -35,25 +36,34 @@ public class ArchiveLikeService {
             questionRepository.increaseLikeCount(questionId);
             archiveRepository.increaseLikeCount(archiveId);
         }
-        return new ArchiveLikeResponse(questionId, true, questionRepository.findLikeCount(questionId));
+        return response(questionId, archiveId, true);
     }
 
+    // 지워진 행이 있을 때만 숫자를 내린다. 숨김, 삭제된 기록의 질문도 취소는 허용
     @Transactional
     public ArchiveLikeResponse unlike(Long userId, Long questionId) {
-        validatePath(questionId);
-        Long archiveId = questionRepository.findArchiveId(questionId)
-                .orElseThrow(() -> new BusinessException(ArchiveErrorCode.QUESTION_NOT_FOUND));
+        ArchiveQuestion question = lockQuestion(questionId);
+        Long archiveId = question.getArchive().getId();
 
         if (likeRepository.deleteByUserIdAndQuestionId(userId, questionId) > 0) {
             questionRepository.decreaseLikeCount(questionId);
             archiveRepository.decreaseLikeCount(archiveId);
         }
-        return new ArchiveLikeResponse(questionId, false, questionRepository.findLikeCount(questionId));
+        return response(questionId, archiveId, false);
     }
 
-    private void validatePath(Long questionId) {
+    // like와 unlike가 같은 질문 행 잠금으로 한 줄로 선다
+    private ArchiveQuestion lockQuestion(Long questionId) {
         if (questionId == null || questionId <= 0) {
             throw new BusinessException(ArchiveErrorCode.INVALID_PATH);
         }
+        return questionRepository.findByIdForUpdate(questionId)
+                .orElseThrow(() -> new BusinessException(ArchiveErrorCode.QUESTION_NOT_FOUND));
+    }
+
+    private ArchiveLikeResponse response(Long questionId, Long archiveId, boolean liked) {
+        return new ArchiveLikeResponse(questionId, liked,
+                questionRepository.findLikeCount(questionId),
+                archiveRepository.findLikeCount(archiveId));
     }
 }
