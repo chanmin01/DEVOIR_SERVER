@@ -7,12 +7,15 @@ import com.benly.archive.dto.ArchiveListResponse;
 import com.benly.archive.dto.ArchiveReportRequest;
 import com.benly.archive.dto.ArchiveSearch;
 import com.benly.archive.dto.CompanyListResponse;
-import com.benly.archive.entity.InterviewFormat;
+import com.benly.archive.dto.LikedQuestionListResponse;
+import com.benly.archive.dto.MyArchiveListResponse;
 import com.benly.archive.service.ArchiveDeleteService;
 import com.benly.archive.service.ArchiveLikeService;
+import com.benly.archive.service.ArchiveMyPageService;
 import com.benly.archive.service.ArchiveQueryService;
 import com.benly.archive.service.ArchiveRegisterService;
 import com.benly.archive.service.ArchiveReportService;
+import com.benly.archive.entity.InterviewFormat;
 import com.benly.archive.support.ArchiveSort;
 import com.benly.global.common.ApiResponse;
 import com.benly.session.entity.CompanyType;
@@ -33,6 +36,7 @@ public class ArchiveController {
     private final ArchiveLikeService archiveLikeService;
     private final ArchiveReportService archiveReportService;
     private final ArchiveDeleteService archiveDeleteService;
+    private final ArchiveMyPageService archiveMyPageService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -95,5 +99,21 @@ public class ArchiveController {
             @AuthenticationPrincipal Long userId,
             @PathVariable Long questionId) {
         return ApiResponse.success("저장을 취소했어요.", archiveLikeService.unlike(userId, questionId));
+    }
+
+    @GetMapping("/me")
+    public ApiResponse<MyArchiveListResponse> getMyArchives(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) Integer size) {
+        return ApiResponse.success("조회에 성공했습니다.", archiveMyPageService.getMyArchives(userId, cursor, size));
+    }
+
+    @GetMapping("/questions/liked")
+    public ApiResponse<LikedQuestionListResponse> getLikedQuestions(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) Integer size) {
+        return ApiResponse.success("조회에 성공했습니다.", archiveMyPageService.getLikedQuestions(userId, cursor, size));
     }
 }
