@@ -4,7 +4,6 @@ import com.benly.archive.entity.Company;
 import com.benly.archive.repository.CompanyRepository;
 import com.benly.global.exception.BusinessException;
 import com.benly.global.recovery.StaleTaskPolicy;
-
 import com.benly.pt.dto.*;
 import com.benly.pt.entity.*;
 import com.benly.pt.repository.*;
@@ -39,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class PtSessionIntegrationTest {
 
     static class MutableClock extends Clock {
+
         Instant now =
                 Instant.parse("2026-11-03T05:00:00Z");
 
@@ -64,6 +64,8 @@ class PtSessionIntegrationTest {
     @EnableJpaRepositories(basePackages = "com.benly")
     @Import({
             PtSessionService.class,
+            PtProgressService.class,
+            PtSessionCancellationListener.class,
             PtOptionService.class,
             PtContentCodec.class,
             SessionService.class
@@ -120,24 +122,44 @@ class PtSessionIntegrationTest {
             );
         }
 
-
         @Bean
         ObjectMapper mapper() {
             return new JsonMapper();
         }
     }
 
-    @Autowired PtSessionService service;
-    @Autowired PtOptionService options;
-    @Autowired PtSessionRepository details;
-    @Autowired PtTaskRepository tasks;
-    @Autowired SessionRepository sessions;
-    @Autowired UserRepository users;
-    @Autowired CompanyRepository companies;
-    @Autowired PtContentCodec codec;
-    @Autowired MutableClock clock;
-    @Autowired JpaTransactionManager manager;
-    @Autowired SessionService existingSessionService;
+    @Autowired
+    PtSessionService service;
+
+    @Autowired
+    PtOptionService options;
+
+    @Autowired
+    PtSessionRepository details;
+
+    @Autowired
+    PtTaskRepository tasks;
+
+    @Autowired
+    SessionRepository sessions;
+
+    @Autowired
+    UserRepository users;
+
+    @Autowired
+    CompanyRepository companies;
+
+    @Autowired
+    PtContentCodec codec;
+
+    @Autowired
+    MutableClock clock;
+
+    @Autowired
+    JpaTransactionManager manager;
+
+    @Autowired
+    SessionService existingSessionService;
 
     Long companyId;
     Long userId;
@@ -160,6 +182,7 @@ class PtSessionIntegrationTest {
             var company = companies.saveAndFlush(
                     Company.ofUser("기업은행", "기업은행")
             );
+
             companyId = company.getId();
 
             userId = users.saveAndFlush(
@@ -225,25 +248,44 @@ class PtSessionIntegrationTest {
                 SessionStatus.IN_PROGRESS,
                 response.status()
         );
+
         assertEquals(
                 PtPhase.PREPARING,
                 response.phase()
         );
+
         assertEquals(
                 Instant.parse("2026-11-03T05:20:00Z"),
                 response.preparationDeadline()
         );
-        assertEquals(companyId, response.task().companyId());
+
+        assertEquals(
+                companyId,
+                response.task().companyId()
+        );
+
         assertNull(response.expiresAt());
 
-        assertTrue(sessions.existsById(response.sessionId()));
-        assertTrue(details.existsById(response.sessionId()));
+        assertTrue(
+                sessions.existsById(response.sessionId())
+        );
+
+        assertTrue(
+                details.existsById(response.sessionId())
+        );
 
         var parent = sessions.findById(response.sessionId())
                 .orElseThrow();
 
-        assertEquals("FINANCE_IT", parent.getCompanyType());
-        assertEquals("백엔드", parent.getJobTitle());
+        assertEquals(
+                "FINANCE_IT",
+                parent.getCompanyType()
+        );
+
+        assertEquals(
+                "백엔드",
+                parent.getJobTitle()
+        );
     }
 
     @Test
@@ -264,8 +306,16 @@ class PtSessionIntegrationTest {
                 first.preparationDeadline(),
                 reloaded.preparationDeadline()
         );
-        assertEquals(first.task(), reloaded.task());
-        assertEquals(clock.instant(), reloaded.serverTime());
+
+        assertEquals(
+                first.task(),
+                reloaded.task()
+        );
+
+        assertEquals(
+                clock.instant(),
+                reloaded.serverTime()
+        );
     }
 
     @Test
@@ -286,6 +336,7 @@ class PtSessionIntegrationTest {
                         request(requestId, 15)
                 ).sessionId()
         );
+
         assertEquals(1, sessions.count());
 
         assertThrows(
@@ -309,11 +360,13 @@ class PtSessionIntegrationTest {
     void concurrentCreationIsIdempotent()
             throws Exception {
         UUID requestId = UUID.randomUUID();
+
         var start = new CountDownLatch(1);
 
         try (var pool = Executors.newFixedThreadPool(2)) {
             Callable<Long> action = () -> {
                 start.await();
+
                 return service.create(
                         userId,
                         request(requestId, 20)
@@ -329,6 +382,7 @@ class PtSessionIntegrationTest {
                     first.get(10, TimeUnit.SECONDS),
                     second.get(10, TimeUnit.SECONDS)
             );
+
             assertEquals(1, sessions.count());
         }
     }
@@ -392,7 +446,9 @@ class PtSessionIntegrationTest {
 
         tasks.deleteAll();
 
-        assertTrue(options.getOptions().companies().isEmpty());
+        assertTrue(
+                options.getOptions().companies().isEmpty()
+        );
 
         assertThrows(
                 BusinessException.class,
@@ -447,6 +503,7 @@ class PtSessionIntegrationTest {
                 SessionStatus.CANCELED,
                 canceled.status()
         );
+
         assertEquals(
                 PtPhase.CANCELED,
                 canceled.phase()
@@ -470,8 +527,14 @@ class PtSessionIntegrationTest {
                 request
         );
 
-        assertEquals("GENERATING", normal.status());
-        assertFalse(details.existsById(normal.sessionId()));
+        assertEquals(
+                "GENERATING",
+                normal.status()
+        );
+
+        assertFalse(
+                details.existsById(normal.sessionId())
+        );
     }
 
     @Test
@@ -524,10 +587,12 @@ class PtSessionIntegrationTest {
                 first.task().taskId(),
                 next.task().taskId()
         );
+
         assertEquals(
                 "새 과제",
                 next.task().content().title()
         );
+
         assertEquals(
                 first.task(),
                 service.get(
@@ -535,6 +600,7 @@ class PtSessionIntegrationTest {
                         first.sessionId()
                 ).task()
         );
+
         assertEquals(
                 first.sessionId(),
                 service.create(
@@ -550,6 +616,7 @@ class PtSessionIntegrationTest {
                 userId,
                 request(UUID.randomUUID(), 15)
         );
+
         var second = service.create(
                 otherId,
                 request(UUID.randomUUID(), 20)
@@ -559,20 +626,26 @@ class PtSessionIntegrationTest {
                 first.sessionId(),
                 second.sessionId()
         );
+
         assertEquals(
                 first.task().taskId(),
                 second.task().taskId()
         );
+
         assertEquals(1, tasks.count());
         assertEquals(2, details.count());
 
         new TransactionTemplate(manager).execute(status -> {
             var one = details.findById(first.sessionId())
                     .orElseThrow();
+
             var two = details.findById(second.sessionId())
                     .orElseThrow();
 
-            assertSame(one.getTask(), two.getTask());
+            assertSame(
+                    one.getTask(),
+                    two.getTask()
+            );
 
             return null;
         });
@@ -586,7 +659,10 @@ class PtSessionIntegrationTest {
         );
 
         new TransactionTemplate(manager).execute(status -> {
-            users.findById(userId).orElseThrow().withdraw();
+            users.findById(userId)
+                    .orElseThrow()
+                    .withdraw();
+
             return null;
         });
 

@@ -8,6 +8,7 @@ import com.benly.pt.controller.PtSessionController;
 import com.benly.pt.dto.*;
 import com.benly.pt.entity.PtPhase;
 import com.benly.pt.exception.*;
+import com.benly.pt.service.PtProgressService;
 import com.benly.pt.service.PtSessionService;
 import com.benly.session.entity.SessionStatus;
 import com.benly.user.entity.UserType;
@@ -20,6 +21,7 @@ import org.springframework.test.context.web.WebAppConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
+import com.benly.pt.entity.PtNextAction;
 
 import java.time.Instant;
 
@@ -49,6 +51,11 @@ class PtSessionControllerTest {
         @Bean
         JwtProvider jwtProvider() {
             return mock(JwtProvider.class);
+        }
+
+        @Bean
+        PtProgressService progressService() {
+            return mock(PtProgressService.class);
         }
 
         @Bean
@@ -100,7 +107,12 @@ class PtSessionControllerTest {
                         now,
                         now.plusSeconds(1200),
                         now,
-                        null
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        PtNextAction.SELECT_TRACK
                 ));
 
         mvc.perform(post("/api/v1/pt/sessions")

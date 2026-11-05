@@ -9,6 +9,11 @@ import lombok.NoArgsConstructor;
 import java.time.Instant;
 import java.util.UUID;
 
+import com.benly.global.exception.BusinessException;
+import com.benly.pt.exception.PtErrorCode;
+import com.benly.pt.policy.PtInterviewRules;
+import com.benly.question.entity.AnswerType;
+
 @Entity
 @Table(
         name = "pt_sessions",
@@ -61,6 +66,29 @@ public class PtSession {
     @Column(name = "expires_at")
     private Instant expiresAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "track", length = 20)
+    private PtTrack track;
+
+    @Column(name = "presentation_started_at")
+    private Instant presentationStartedAt;
+
+    @Column(name = "presentation_deadline")
+    private Instant presentationDeadline;
+
+    @Column(name = "presentation_transcript", columnDefinition = "MEDIUMTEXT")
+    private String presentationTranscript;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "presentation_input_type", length = 10)
+    private AnswerType presentationInputType;
+
+    @Column(name = "presentation_request_id", length = 36)
+    private String presentationRequestId;
+
+    @Column(name = "presentation_submitted_at")
+    private Instant presentationSubmittedAt;
+
     public static PtSession prepare(
             Session session,
             PtTask task,
@@ -82,5 +110,92 @@ public class PtSession {
         detail.expiresAt = expiresAt;
 
         return detail;
+    }
+
+    public void selectTrack(PtTrack track) {
+        requirePhase(PtPhase.PREPARING);
+
+        if (track == null) {
+            throw new BusinessException(PtErrorCode.INVALID_REQUEST);
+        }
+
+        this.track = track;
+    }
+
+    public void startPresentation(Instant now) {
+        if (phase == PtPhase.PRESENTING) {
+            return;
+        }
+
+        requirePhase(PtPhase.PREPARING);
+
+        if (track == null) {
+            throw new BusinessException(PtErrorCode.TRACK_REQUIRED);
+        }
+
+        // 준비 마감 후 늦게 요청해도 발표 시간을 추가로 주지 않는다.
+        this.presentationStartedAt = now.isBefore(preparationDeadline)
+                ? now
+                : preparationDeadline;
+
+        this.presentationDeadline = presentationStartedAt
+                .plusSeconds(PtInterviewRules.PRESENTATION_SECONDS);
+
+        this.phase = PtPhase.PRESENTING;
+    }
+
+    public void submitTextPresentation(
+            UUID requestId,
+            String text,
+            Instant now
+    ) {
+        if (presentationRequestId != null) {
+            if (presentationRequestId.equals(requestId.toString())) {
+                if (presentationInputType == AnswerType.TEXT
+                        && presentationTranscript.equals(text)) {
+                    return;
+                }
+
+                throw new BusinessException(
+                        PtErrorCode.REQUEST_CONFLICT
+                );
+            }
+
+            throw new BusinessException(
+                    PtErrorCode.PRESENTATION_ALREADY_SUBMITTED
+            );
+        }
+
+        requirePhase(PtPhase.PRESENTING);
+
+        Instant submissionDeadline = presentationDeadline.plusSeconds(
+                PtInterviewRules.PRESENTATION_SUBMISSION_GRACE_SECONDS
+        );
+
+        if (now.isAfter(submissionDeadline)) {
+            throw new BusinessException(
+                    PtErrorCode.PRESENTATION_SUBMISSION_EXPIRED
+            );
+        }
+
+        this.presentationRequestId = requestId.toString();
+        this.presentationTranscript = text;
+        this.presentationInputType = AnswerType.TEXT;
+        this.presentationSubmittedAt = now;
+        this.phase = PtPhase.GENERATING;
+    }
+
+    public void cancel() {
+        if (phase == PtPhase.COMPLETED) {
+            throw new BusinessException(PtErrorCode.CANNOT_CANCEL);
+        }
+
+        this.phase = PtPhase.CANCELED;
+    }
+
+    private void requirePhase(PtPhase expected) {
+        if (phase != expected) {
+            throw new BusinessException(PtErrorCode.INVALID_PHASE);
+        }
     }
 }

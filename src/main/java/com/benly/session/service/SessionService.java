@@ -19,6 +19,8 @@ import com.benly.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.benly.session.event.SessionCanceledEvent;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
 
@@ -32,6 +34,7 @@ public class SessionService {
     private final DocumentRepository documentRepository;
     private final QuestionRepository questionRepository;
     private final StaleTaskPolicy staleTaskPolicy;
+    private final ApplicationEventPublisher events;
 
     @Transactional
     public SessionCreateResponse createSession(Long userId, SessionCreateRequest sessionCreateRequest) {
@@ -205,6 +208,9 @@ public class SessionService {
         }
 
         session.markCanceled(); // 영속성 컨텍스트 상태 동기화
+
+        session.markCanceled();
+        events.publishEvent(new SessionCanceledEvent(sessionId));
 
         return SessionCancelResponse.from(session);
     }

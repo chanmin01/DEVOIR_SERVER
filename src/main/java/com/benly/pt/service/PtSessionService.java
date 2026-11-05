@@ -211,6 +211,8 @@ public class PtSessionService {
                 codec.content(task.getContentJson())
         );
 
+        var progress = PtProgressResponse.from(detail, now);
+
         return new PtSessionResponse(
                 session.getId(),
                 InterviewFormat.PT,
@@ -222,7 +224,12 @@ public class PtSessionService {
                 detail.getPreparationStartedAt(),
                 detail.getPreparationDeadline(),
                 now,
-                detail.getExpiresAt()
+                detail.getExpiresAt(),
+                progress.track(),
+                progress.presentationStartedAt(),
+                progress.presentationDeadline(),
+                progress.presentation(),
+                progress.nextAction()
         );
     }
 }
