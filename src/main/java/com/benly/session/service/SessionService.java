@@ -208,8 +208,6 @@ public class SessionService {
         }
 
         session.markCanceled(); // 영속성 컨텍스트 상태 동기화
-
-        session.markCanceled();
         events.publishEvent(new SessionCanceledEvent(sessionId));
 
         return SessionCancelResponse.from(session);

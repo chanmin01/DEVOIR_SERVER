@@ -35,7 +35,9 @@ import java.util.concurrent.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringJUnitConfig(PtSessionIntegrationTest.Config.class)
-class PtSessionIntegrationTest {
+class PtSessionIntegrationTest {    @Autowired com.benly.pt.repository.PtAudioReceiptRepository receipts;
+    @Autowired com.benly.pt.repository.PtQuestionTurnRepository turns;
+
 
     static class MutableClock extends Clock {
 
@@ -173,6 +175,8 @@ class PtSessionIntegrationTest {
                 Instant.parse("2026-11-03T05:00:00Z");
 
         new TransactionTemplate(manager).execute(status -> {
+            receipts.deleteAll();
+            turns.deleteAll();
             details.deleteAll();
             sessions.deleteAll();
             tasks.deleteAll();
