@@ -156,7 +156,9 @@ public class PtSession {
                     return;
                 }
 
-                throw new BusinessException(PtErrorCode.REQUEST_CONFLICT);
+                throw new BusinessException(
+                        PtErrorCode.REQUEST_CONFLICT
+                );
             }
 
             throw new BusinessException(
@@ -165,6 +167,16 @@ public class PtSession {
         }
 
         requirePhase(PtPhase.PRESENTING);
+
+        Instant submissionDeadline = presentationDeadline.plusSeconds(
+                PtInterviewRules.PRESENTATION_SUBMISSION_GRACE_SECONDS
+        );
+
+        if (now.isAfter(submissionDeadline)) {
+            throw new BusinessException(
+                    PtErrorCode.PRESENTATION_SUBMISSION_EXPIRED
+            );
+        }
 
         this.presentationRequestId = requestId.toString();
         this.presentationTranscript = text;

@@ -12,6 +12,7 @@ import com.benly.user.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.benly.session.repository.SessionRepository;
 
 import java.time.Clock;
 
@@ -22,13 +23,16 @@ public class PtProgressService {
     private final PtSessionRepository details;
     private final UserRepository users;
     private final Clock clock;
+    private final SessionRepository sessions;
 
     public PtProgressService(
             PtSessionRepository details,
+            SessionRepository sessions,
             UserRepository users,
             @Qualifier("ptClock") Clock clock
     ) {
         this.details = details;
+        this.sessions = sessions;
         this.users = users;
         this.clock = clock;
     }
@@ -122,7 +126,7 @@ public class PtProgressService {
                 );
 
         // 기존 공통 취소 API와 같은 Session 행을 잠근다.
-        details.findOwnedSessionForUpdate(sessionId, userId)
+        sessions.findOwnedSessionForUpdate(sessionId, userId)
                 .orElseThrow(() ->
                         error(PtErrorCode.SESSION_NOT_FOUND)
                 );

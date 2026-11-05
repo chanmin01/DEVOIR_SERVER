@@ -65,6 +65,7 @@ class PtSessionIntegrationTest {
     @Import({
             PtSessionService.class,
             PtProgressService.class,
+            PtSessionCancellationListener.class,
             PtOptionService.class,
             PtContentCodec.class,
             SessionService.class

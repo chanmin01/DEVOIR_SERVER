@@ -82,7 +82,9 @@ class PtProgressControllerTest {
     PtProgressResponse view(PtPhase phase) {
         return new PtProgressResponse(
                 100L,
-                phase == PtPhase.CANCELED ? SessionStatus.CANCELED : SessionStatus.IN_PROGRESS,
+                phase == PtPhase.CANCELED
+                        ? SessionStatus.CANCELED
+                        : SessionStatus.IN_PROGRESS,
                 phase,
                 PtTrack.DATA,
                 NOW.plusSeconds(1200),
@@ -90,15 +92,25 @@ class PtProgressControllerTest {
                 NOW.plusSeconds(300),
                 NOW,
                 phase == PtPhase.GENERATING
-                        ? new PtPresentationResponse("발표", AnswerType.TEXT, NOW)
+                        ? new PtPresentationResponse(
+                        "발표",
+                        AnswerType.TEXT,
+                        NOW
+                )
                         : null,
                 switch (phase) {
-                    case PREPARING -> "START_PRESENTATION";
-                    case PRESENTING -> "SUBMIT_PRESENTATION";
-                    case GENERATING -> "GENERATE_QUESTION";
-                    case CANCELED -> "NONE";
-                    default -> "FINISH";
-                });
+                    case PREPARING ->
+                            PtNextAction.START_PRESENTATION;
+                    case PRESENTING ->
+                            PtNextAction.SUBMIT_PRESENTATION;
+                    case GENERATING ->
+                            PtNextAction.GENERATE_QUESTION;
+                    case CANCELED ->
+                            PtNextAction.NONE;
+                    default ->
+                            PtNextAction.FINISH;
+                }
+        );
     }
 
     @ParameterizedTest

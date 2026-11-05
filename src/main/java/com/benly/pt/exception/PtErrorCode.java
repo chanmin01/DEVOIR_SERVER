@@ -22,7 +22,9 @@ public enum PtErrorCode implements ErrorCode {
     SESSION_NOT_IN_PROGRESS(HttpStatus.CONFLICT, "진행 중인 PT 면접이 아닙니다."),
     TRACK_REQUIRED(HttpStatus.CONFLICT, "발표 분야를 먼저 선택해주세요."),
     PRESENTATION_ALREADY_SUBMITTED(HttpStatus.CONFLICT, "발표는 이미 제출되었습니다."),
+    PRESENTATION_SUBMISSION_EXPIRED(HttpStatus.CONFLICT, "발표 제출 가능 시간이 지났습니다."),
     CANNOT_CANCEL(HttpStatus.CONFLICT, "현재 상태에서는 PT 면접을 취소할 수 없습니다.");
+
 
     private final HttpStatus status;
     private final String message;

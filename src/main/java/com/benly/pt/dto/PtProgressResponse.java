@@ -4,6 +4,7 @@ import com.benly.pt.entity.PtPhase;
 import com.benly.pt.entity.PtSession;
 import com.benly.pt.entity.PtTrack;
 import com.benly.session.entity.SessionStatus;
+import com.benly.pt.entity.PtNextAction;
 
 import java.time.Instant;
 
@@ -17,7 +18,7 @@ public record PtProgressResponse(
         Instant presentationDeadline,
         Instant serverTime,
         PtPresentationResponse presentation,
-        String nextAction
+        PtNextAction nextAction
 ) {
 
     public static PtProgressResponse from(
@@ -39,15 +40,15 @@ public record PtProgressResponse(
                         detail.getPresentationSubmittedAt()
                 );
 
-        String nextAction = switch (phase) {
+        PtNextAction nextAction = switch (phase) {
             case PREPARING -> detail.getTrack() == null
-                    ? "SELECT_TRACK"
-                    : "START_PRESENTATION";
-            case PRESENTING -> "SUBMIT_PRESENTATION";
-            case GENERATING -> "GENERATE_QUESTION";
-            case QUESTIONING -> "ANSWER";
-            case COMPLETED -> "FINISH";
-            case CANCELED -> "NONE";
+                    ? PtNextAction.SELECT_TRACK
+                    : PtNextAction.START_PRESENTATION;
+            case PRESENTING -> PtNextAction.SUBMIT_PRESENTATION;
+            case GENERATING -> PtNextAction.GENERATE_QUESTION;
+            case QUESTIONING -> PtNextAction.ANSWER;
+            case COMPLETED -> PtNextAction.FINISH;
+            case CANCELED -> PtNextAction.NONE;
         };
 
         return new PtProgressResponse(

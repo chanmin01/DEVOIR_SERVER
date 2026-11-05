@@ -9,6 +9,7 @@ import com.benly.session.dto.GenerationStatusResponse;
 import com.benly.session.dto.SessionDetailResponse;
 import com.benly.session.entity.Session;
 import com.benly.session.entity.SessionStatus;
+import com.benly.session.event.SessionCanceledEvent;
 import com.benly.session.exception.SessionErrorCode;
 import com.benly.session.repository.SessionRepository;
 import com.benly.user.entity.User;
@@ -20,6 +21,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
@@ -39,6 +41,7 @@ import static org.mockito.Mockito.verify;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class SessionQueryTest {
 
+    @Mock private ApplicationEventPublisher events;
     @Mock private SessionRepository sessionRepository;
     @Mock private QuestionRepository questionRepository;
     @Mock private StaleTaskPolicy staleTaskPolicy;
@@ -286,14 +289,28 @@ class SessionQueryTest {
     @DisplayName("세션 폐기 성공 - IN_PROGRESS -> CANCELED")
     void cancelSession_success() {
         User user = mockUser(USER_ID);
-        Session session = createRealSession(user, SessionStatus.IN_PROGRESS);
-        given(sessionRepository.findById(SESSION_ID)).willReturn(Optional.of(session));
-        given(sessionRepository.updateStatusIfIn(eq(SESSION_ID), anyList(), eq(SessionStatus.CANCELED)))
-                .willReturn(1);
+        Session session = createRealSession(
+                user,
+                SessionStatus.IN_PROGRESS
+        );
+
+        given(sessionRepository.findById(SESSION_ID))
+                .willReturn(Optional.of(session));
+
+        given(sessionRepository.updateStatusIfIn(
+                eq(SESSION_ID),
+                anyList(),
+                eq(SessionStatus.CANCELED)
+        )).willReturn(1);
 
         sessionService.cancelSession(USER_ID, SESSION_ID);
 
-        assertThat(session.getStatus()).isEqualTo(SessionStatus.CANCELED);
+        assertThat(session.getStatus())
+                .isEqualTo(SessionStatus.CANCELED);
+
+        verify(events).publishEvent(
+                new SessionCanceledEvent(SESSION_ID)
+        );
     }
 
     @Test
