@@ -5,6 +5,11 @@ import com.benly.global.exception.BusinessException;
 import com.benly.global.exception.ErrorCode;
 import com.benly.pt.controller.PtOptionController;
 import com.benly.pt.controller.PtSessionController;
+import com.benly.pt.controller.PtInterviewController;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -21,7 +26,8 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 @RestControllerAdvice(
         assignableTypes = {
                 PtOptionController.class,
-                PtSessionController.class
+                PtSessionController.class,
+                PtInterviewController.class
         }
 )
 public class PtExceptionHandler {
@@ -37,7 +43,9 @@ public class PtExceptionHandler {
     @ExceptionHandler({
             MethodArgumentNotValidException.class,
             HttpMessageNotReadableException.class,
-            MethodArgumentTypeMismatchException.class
+            MethodArgumentTypeMismatchException.class,
+            MissingServletRequestParameterException.class,
+            MissingServletRequestPartException.class
     })
     public ResponseEntity<ApiResponse<Void>> invalid(
             Exception exception,
@@ -68,5 +76,17 @@ public class PtExceptionHandler {
                         errorCode.getMessage(),
                         request.getRequestURI()
                 ));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> audioSize(MaxUploadSizeExceededException exception,
+                                                       HttpServletRequest request) {
+        return error(PtErrorCode.AUDIO_TOO_LARGE, request);
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> audioType(HttpMediaTypeNotSupportedException exception,
+                                                       HttpServletRequest request) {
+        return error(PtErrorCode.REQUEST_MEDIA_TYPE_NOT_SUPPORTED, request);
     }
 }

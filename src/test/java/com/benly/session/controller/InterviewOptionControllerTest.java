@@ -1,5 +1,6 @@
 package com.benly.session.controller;
 
+import com.benly.pt.repository.PtSessionRepository;
 import com.benly.session.dto.InterviewOptionResponse;
 import com.benly.session.service.InterviewOptionService;
 import org.junit.jupiter.api.DisplayName;
@@ -17,6 +18,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(InterviewOptionController.class)
 public class InterviewOptionControllerTest {
+
+    @MockitoBean
+    private PtSessionRepository ptSessionRepository;
+
 
     @Autowired
     private MockMvc mockMvc;

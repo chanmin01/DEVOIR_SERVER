@@ -8,11 +8,11 @@ import com.benly.pt.entity.PtSession;
 import com.benly.pt.exception.PtErrorCode;
 import com.benly.pt.repository.PtSessionRepository;
 import com.benly.session.entity.SessionStatus;
+import com.benly.session.repository.SessionRepository;
 import com.benly.user.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.benly.session.repository.SessionRepository;
 
 import java.time.Clock;
 
@@ -21,9 +21,9 @@ import java.time.Clock;
 public class PtProgressService {
 
     private final PtSessionRepository details;
+    private final SessionRepository sessions;
     private final UserRepository users;
     private final Clock clock;
-    private final SessionRepository sessions;
 
     public PtProgressService(
             PtSessionRepository details,
@@ -82,6 +82,9 @@ public class PtProgressService {
         PtSession detail = ownedForUpdate(userId, sessionId);
         requireRunning(detail);
 
+        if (detail.getPresentationRequestId() == null) {
+            detail.requireNoActiveOperation(clock.instant());
+        }
         detail.submitTextPresentation(
                 request.requestId(),
                 request.transcript().strip(),

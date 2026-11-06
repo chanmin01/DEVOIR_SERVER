@@ -1,5 +1,7 @@
+
 package com.benly.feedback.controller;
 
+import com.benly.pt.repository.PtSessionRepository;
 import com.benly.feedback.dto.FeedbackReportResponse;
 import com.benly.feedback.dto.FeedbackScoringResponse;
 import com.benly.feedback.dto.FeedbackStatusResponse;
@@ -28,6 +30,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(FeedbackController.class)
 class FeedbackControllerTest {
+
+    @MockitoBean
+    private PtSessionRepository ptSessionRepository;
+
 
     @Autowired
     private MockMvc mockMvc;

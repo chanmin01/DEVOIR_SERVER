@@ -29,7 +29,9 @@ import java.util.concurrent.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringJUnitConfig(PtSessionIntegrationTest.Config.class)
-class PtProgressIntegrationTest {
+class PtProgressIntegrationTest {    @Autowired com.benly.pt.repository.PtAudioReceiptRepository receipts;
+    @Autowired com.benly.pt.repository.PtQuestionTurnRepository turns;
+
 
     private static final Instant START =
             Instant.parse("2026-11-04T04:00:00Z");
@@ -56,6 +58,8 @@ class PtProgressIntegrationTest {
         clock.now = START;
 
         tx(() -> {
+            receipts.deleteAll();
+            turns.deleteAll();
             details.deleteAll();
             parents.deleteAll();
             tasks.deleteAll();

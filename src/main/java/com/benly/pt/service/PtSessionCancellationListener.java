@@ -18,7 +18,7 @@ public class PtSessionCancellationListener {
     @EventListener
     @Transactional(propagation = Propagation.MANDATORY)
     public void onCanceled(SessionCanceledEvent event) {
-        details.findById(event.sessionId())
+        details.findByIdForUpdate(event.sessionId())
                 .ifPresent(PtSession::cancel);
     }
 }

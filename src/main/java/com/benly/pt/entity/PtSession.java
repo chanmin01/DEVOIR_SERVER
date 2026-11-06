@@ -112,6 +112,100 @@ public class PtSession {
         return detail;
     }
 
+    @Column(name = "operation_token", length = 36)
+    private String operationToken;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "operation_kind", length = 30)
+    private PtOperationKind operationKind;
+
+    @Column(name = "operation_started_at")
+    private Instant operationStartedAt;
+
+    @Column(name = "presentation_payload_hash", length = 64)
+    private String presentationPayloadHash;
+
+    @Column(name = "presentation_duration_sec")
+    private Integer presentationDurationSec;
+
+    @Column(name = "retention_closed_at")
+    private Instant retentionClosedAt;
+
+    public void closeRetention(Instant now) {
+        retentionClosedAt = now;
+        clearOperation();
+    }
+
+    public boolean isOperationActive(Instant now) {
+        return operationToken != null
+                && operationStartedAt.plusSeconds(operationKind.leaseSeconds()).isAfter(now);
+    }
+
+    public void requireNoActiveOperation(Instant now) {
+        if (isOperationActive(now)) {
+            throw new BusinessException(PtErrorCode.REQUEST_IN_PROGRESS);
+        }
+        clearOperation();
+    }
+
+    public UUID claimOperation(PtOperationKind kind, Instant now) {
+        requireNoActiveOperation(now);
+        UUID token = UUID.randomUUID();
+        operationToken = token.toString();
+        operationKind = kind;
+        operationStartedAt = now;
+        return token;
+    }
+
+    public void requireOperation(UUID token, Instant now) {
+        if (!token.toString().equals(operationToken) || !isOperationActive(now)) {
+            throw new BusinessException(PtErrorCode.OPERATION_EXPIRED);
+        }
+    }
+
+    public boolean operationMatches(UUID token) {
+        return token.toString().equals(operationToken);
+    }
+
+    public void clearOperation() {
+        operationToken = null;
+        operationKind = null;
+        operationStartedAt = null;
+    }
+
+    public void openQuestion() {
+        requirePhase(PtPhase.GENERATING);
+        phase = PtPhase.QUESTIONING;
+    }
+
+    public void finishAnswer(boolean last) {
+        requirePhase(PtPhase.QUESTIONING);
+        phase = last ? PtPhase.COMPLETED : PtPhase.GENERATING;
+        if (last) {
+            session.markCompleted();
+        }
+    }
+
+    public void requirePresentationAdmission(Instant admittedAt) {
+        requirePhase(PtPhase.PRESENTING);
+        if (admittedAt.isAfter(presentationDeadline.plusSeconds(
+                PtInterviewRules.PRESENTATION_SUBMISSION_GRACE_SECONDS))) {
+            throw new BusinessException(PtErrorCode.PRESENTATION_SUBMISSION_EXPIRED);
+        }
+    }
+
+    public void submitAudioPresentation(UUID requestId, String text, String payloadHash,
+                                        int durationSec, Instant admittedAt, Instant submittedAt) {
+        requirePresentationAdmission(admittedAt);
+        presentationRequestId = requestId.toString();
+        presentationTranscript = text;
+        presentationInputType = AnswerType.AUDIO;
+        presentationPayloadHash = payloadHash;
+        presentationDurationSec = durationSec;
+        presentationSubmittedAt = submittedAt;
+        phase = PtPhase.GENERATING;
+    }
+
     public void selectTrack(PtTrack track) {
         requirePhase(PtPhase.PREPARING);
 
@@ -156,9 +250,7 @@ public class PtSession {
                     return;
                 }
 
-                throw new BusinessException(
-                        PtErrorCode.REQUEST_CONFLICT
-                );
+                throw new BusinessException(PtErrorCode.REQUEST_CONFLICT);
             }
 
             throw new BusinessException(
@@ -171,11 +263,8 @@ public class PtSession {
         Instant submissionDeadline = presentationDeadline.plusSeconds(
                 PtInterviewRules.PRESENTATION_SUBMISSION_GRACE_SECONDS
         );
-
         if (now.isAfter(submissionDeadline)) {
-            throw new BusinessException(
-                    PtErrorCode.PRESENTATION_SUBMISSION_EXPIRED
-            );
+            throw new BusinessException(PtErrorCode.PRESENTATION_SUBMISSION_EXPIRED);
         }
 
         this.presentationRequestId = requestId.toString();
@@ -191,6 +280,7 @@ public class PtSession {
         }
 
         this.phase = PtPhase.CANCELED;
+        clearOperation();
     }
 
     private void requirePhase(PtPhase expected) {
