@@ -22,7 +22,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.YearMonth;
@@ -61,7 +60,8 @@ class ArchiveMyPageIntegrationTest {
     }
 
     private void hide(InterviewArchive a) {
-        ReflectionTestUtils.setField(a, "status", ArchiveStatus.HIDDEN);
+        a.addReport(1);
+        assertThat(a.getStatus()).isEqualTo(ArchiveStatus.HIDDEN);
     }
 
     @Test
@@ -84,6 +84,21 @@ class ArchiveMyPageIntegrationTest {
         assertThat(response.archives().get(1).questions()).hasSize(2);
         assertThat(response.totalQuestions()).isEqualTo(3);
         assertThat(response.hasNext()).isFalse();
+    }
+
+    @Test
+    @DisplayName("내 기록 질문에 내 하트 여부와 KST 등록 시각이 들어간다")
+    void myArchivesLikedAndTime() {
+        User me = user();
+        InterviewArchive archive = archive(me, 2);
+        likeRepository.save(ArchiveLike.of(me, firstQuestion(archive)));
+
+        MyArchiveListResponse response = service.getMyArchives(me.getId(), null, null);
+
+        MyArchiveListResponse.Item item = response.archives().get(0);
+        assertThat(item.questions()).extracting(MyArchiveListResponse.Question::liked)
+                .containsExactly(true, false);
+        assertThat(item.createdAt()).endsWith("+09:00");
     }
 
     @Test
