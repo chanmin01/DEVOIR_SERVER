@@ -1,0 +1,8 @@
+[면접 정보]
+기업 유형: {{companyType}}
+면접 단계: {{stage}}
+총점: {{totalScore}}점, 100점 만점
+{{skipNote}}
+
+[문항별 약점]
+{{perQuestion}}

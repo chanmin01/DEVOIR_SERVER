@@ -1,0 +1,14 @@
+[면접 정보]
+기업 유형: {{companyType}}
+면접 단계: {{stage}}
+직무: {{jobTitle}}
+
+[평가축]
+{{axes}}
+
+[메인 질문]
+<question>{{question}}</question>
+<answer>{{answer}}</answer>
+
+[꼬리 질문들, 각 항목을 따로 평가]
+{{tails}}
