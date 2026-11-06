@@ -6,6 +6,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
+
+import java.util.Optional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -63,4 +67,16 @@ public interface SessionRepository extends JpaRepository<Session, Long> {
     int failStaleGeneratingById(@Param("sessionId") Long sessionId,
                                 @Param("startedThreshold") LocalDateTime startedThreshold,
                                 @Param("queuedThreshold") LocalDateTime queuedThreshold);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        select s from Session s
+        where s.id = :id
+          and s.user.id = :userId
+          and s.deletedAt is null
+        """)
+    Optional<Session> findOwnedSessionForUpdate(
+            @Param("id") Long id,
+            @Param("userId") Long userId
+    );
 }

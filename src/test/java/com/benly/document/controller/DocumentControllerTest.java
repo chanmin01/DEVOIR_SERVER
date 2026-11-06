@@ -1,6 +1,7 @@
 package com.benly.document.controller;
 
 
+import com.benly.pt.repository.PtSessionRepository;
 import com.benly.document.dto.DocumentResponse;
 import com.benly.document.service.DocumentService;
 import org.junit.jupiter.api.DisplayName;
@@ -21,6 +22,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(DocumentController.class)
 class DocumentControllerTest {
+
+    @MockitoBean
+    private PtSessionRepository ptSessionRepository;
+
 
     @Autowired
     private MockMvc mockMvc;
