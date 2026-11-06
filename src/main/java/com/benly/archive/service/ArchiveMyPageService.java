@@ -15,8 +15,10 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -43,11 +45,18 @@ public class ArchiveMyPageService {
         }
 
         List<Long> archiveIds = page.stream().map(InterviewArchive::getId).toList();
-        Map<Long, List<ArchiveQuestion>> questionsByArchive = questionRepository.findByArchiveIds(archiveIds).stream()
+        List<ArchiveQuestion> questions = questionRepository.findByArchiveIds(archiveIds);
+        Map<Long, List<ArchiveQuestion>> questionsByArchive = questions.stream()
                 .collect(Collectors.groupingBy(q -> q.getArchive().getId()));
 
+        List<Long> questionIds = questions.stream().map(ArchiveQuestion::getId).toList();
+        Set<Long> likedIds = questionIds.isEmpty()
+                ? Set.of()
+                : new HashSet<>(likeRepository.findLikedQuestionIds(userId, questionIds));
+
         List<MyArchiveListResponse.Item> items = page.stream()
-                .map(a -> MyArchiveListResponse.Item.of(a, questionsByArchive.getOrDefault(a.getId(), List.of())))
+                .map(a -> MyArchiveListResponse.Item.of(a,
+                        questionsByArchive.getOrDefault(a.getId(), List.of()), likedIds))
                 .toList();
         String nextCursor = hasNext ? ArchiveCursor.encode(page.get(page.size() - 1).getId()) : null;
         return new MyArchiveListResponse(totalQuestions, items, nextCursor, hasNext);
