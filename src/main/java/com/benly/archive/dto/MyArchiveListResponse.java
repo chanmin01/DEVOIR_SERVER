@@ -4,11 +4,11 @@ import com.benly.archive.entity.ArchiveQuestion;
 import com.benly.archive.entity.ArchiveStatus;
 import com.benly.archive.entity.InterviewArchive;
 import com.benly.archive.entity.InterviewFormat;
+import com.benly.archive.support.ArchiveTime;
 import com.benly.session.entity.InterviewStage;
 
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.util.List;
+import java.util.Set;
 
 public record MyArchiveListResponse(
         long totalQuestions,
@@ -17,35 +17,33 @@ public record MyArchiveListResponse(
         boolean hasNext
 ) {
 
-    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
-
     public record Item(
             Long archiveId,
             CompanySummary company,
             InterviewStage stage,
             InterviewFormat format,
             String interviewedOn,
-            OffsetDateTime createdAt,
+            String createdAt,
             ArchiveStatus status,
             List<Question> questions
     ) {
-        public static Item of(InterviewArchive a, List<ArchiveQuestion> questions) {
+        public static Item of(InterviewArchive a, List<ArchiveQuestion> questions, Set<Long> likedIds) {
             return new Item(
                     a.getId(),
                     CompanySummary.from(a.getCompany()),
                     a.getStage(),
                     a.getFormat(),
                     a.getInterviewedMonth().toString(),
-                    a.getCreatedAt().atZone(KST).toOffsetDateTime(),
+                    ArchiveTime.toKst(a.getCreatedAt()),
                     a.getStatus(),
-                    questions.stream().map(Question::of).toList()
+                    questions.stream().map(q -> Question.of(q, likedIds.contains(q.getId()))).toList()
             );
         }
     }
 
-    public record Question(Long questionId, String content, int likeCount) {
-        static Question of(ArchiveQuestion q) {
-            return new Question(q.getId(), q.getContent(), q.getLikeCount());
+    public record Question(Long questionId, String content, int likeCount, boolean liked) {
+        static Question of(ArchiveQuestion q, boolean liked) {
+            return new Question(q.getId(), q.getContent(), q.getLikeCount(), liked);
         }
     }
 
