@@ -81,6 +81,11 @@ class PtCombinedControllerTest {
 
     @RestController
     static class LegacyStub {
+        @PostMapping("/api/v1/questions/{questionId}/skip")
+        String skip(@PathVariable Long questionId, @RequestParam Long sessionId) {
+            return "skip";
+        }
+
         @PostMapping("/api/v1/sessions/{sessionId}/answers/text")
         String answer(@PathVariable Long sessionId) {
             return "normal";
@@ -123,7 +128,7 @@ class PtCombinedControllerTest {
         when(jwt.isValid("valid")).thenReturn(true);
         when(jwt.getUserId("valid")).thenReturn(1L);
         when(jwt.getUserType("valid")).thenReturn(UserType.MEMBER);
-        when(details.existsById(101L)).thenReturn(true);
+        when(details.findOwnerId(101L)).thenReturn(java.util.Optional.of(1L));
         mvc = webAppContextSetup(context).apply(springSecurity()).build();
     }
 
@@ -292,5 +297,19 @@ class PtCombinedControllerTest {
                         .contentType("text/plain").content("invalid content type"))
                 .andExpect(status().isUnsupportedMediaType())
                 .andExpect(jsonPath("$.message").value("요청 Content-Type을 확인해주세요."));
+    }
+
+    @Test
+    void legacySkipWithQuerySessionIdIsBlockedForPt() throws Exception {
+        mvc.perform(post("/api/v1/questions/201/skip")
+                        .param("sessionId", "101")
+                        .header("Authorization", "Bearer valid"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("PT 전용 진행 API를 사용해주세요."));
+        mvc.perform(post("/api/v1/questions/202/skip")
+                        .param("sessionId", "102")
+                        .header("Authorization", "Bearer valid"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("skip"));
     }
 }
