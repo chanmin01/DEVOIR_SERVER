@@ -14,6 +14,7 @@ import com.benly.archive.repository.ArchiveReportRepository;
 import com.benly.archive.repository.CompanyRepository;
 import com.benly.archive.repository.InterviewArchiveRepository;
 import com.benly.archive.support.ArchiveCursor;
+import com.benly.archive.support.ArchivePageSize;
 import com.benly.archive.support.ArchiveSort;
 import com.benly.global.exception.BusinessException;
 import com.benly.session.entity.CompanyType;
@@ -33,9 +34,6 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class ArchiveQueryService {
 
-    private static final int DEFAULT_SIZE = 20;
-    private static final int MAX_SIZE = 50;
-
     private final InterviewArchiveRepository archiveRepository;
     private final ArchiveQuestionRepository questionRepository;
     private final ArchiveLikeRepository likeRepository;
@@ -43,7 +41,7 @@ public class ArchiveQueryService {
     private final CompanyRepository companyRepository;
 
     public ArchiveListResponse getArchives(Long userId, ArchiveSearch search) {
-        int size = resolveSize(search.size());
+        int size = ArchivePageSize.resolve(search.size());
         validateCompany(search.companyId());
         ArchiveSort sort = search.sort() == null ? ArchiveSort.LATEST : search.sort();
         String jobRole = (search.jobRole() == null || search.jobRole().isBlank()) ? null : search.jobRole().trim();
@@ -99,7 +97,7 @@ public class ArchiveQueryService {
     }
 
     public CompanyListResponse getCompanies(CompanyType companyType, String rawCursor, Integer rawSize) {
-        int size = resolveSize(rawSize);
+        int size = ArchivePageSize.resolve(rawSize);
         ArchiveCursor cursor = ArchiveCursor.ofScoreAndId(rawCursor);
 
         List<CompanyQuestionCount> rows = questionRepository.countByCompany(companyType,
@@ -117,16 +115,6 @@ public class ArchiveQueryService {
         }
         return new CompanyListResponse(
                 page.stream().map(CompanyListResponse.Item::from).toList(), nextCursor, hasNext);
-    }
-
-    private int resolveSize(Integer size) {
-        if (size == null) {
-            return DEFAULT_SIZE;
-        }
-        if (size < 1 || size > MAX_SIZE) {
-            throw new BusinessException(ArchiveErrorCode.INVALID_PAGE_SIZE);
-        }
-        return size;
     }
 
     private void validateCompany(Long companyId) {

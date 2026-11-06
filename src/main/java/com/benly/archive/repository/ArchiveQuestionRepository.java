@@ -68,4 +68,11 @@ public interface ArchiveQuestionRepository extends JpaRepository<ArchiveQuestion
     @Query("select q.likeCount from ArchiveQuestion q where q.id = :questionId")
     int findLikeCount(@Param("questionId") Long questionId);
 
+    @Query("""
+            select count(q) from ArchiveQuestion q
+            where q.archive.user.id = :userId
+              and q.archive.deletedAt is null
+            """)
+    long countMine(@Param("userId") Long userId);
+
 }
