@@ -1,7 +1,6 @@
 package com.benly.feedback.service;
 
-import com.benly.feedback.dto.ScoredPresentation;
-import com.benly.feedback.dto.ScoredTopic;
+import com.benly.feedback.dto.CardSnapshot;
 import com.benly.feedback.dto.ScoringContext;
 import com.benly.feedback.dto.ScoringPlan;
 import com.benly.feedback.dto.ScoringResult.MainQuestionInput;
@@ -9,13 +8,12 @@ import com.benly.feedback.dto.ScoringResult.PresentationInput;
 import com.benly.feedback.dto.ScoringResult.SessionSummary;
 import com.benly.feedback.dto.ScoringResult.TailInput;
 import com.benly.feedback.entity.AxisSet;
-import com.benly.feedback.entity.Feedback;
-import com.benly.feedback.entity.ScoreAxis;
 import com.benly.feedback.entity.SessionFeedback;
 import com.benly.feedback.entity.SessionFormat;
 import com.benly.feedback.exception.FeedbackErrorCode;
 import com.benly.feedback.repository.*;
 import com.benly.global.exception.BusinessException;
+import com.benly.global.recovery.StaleTaskPolicy;
 import com.benly.pt.dto.PtTaskContent;
 import com.benly.pt.entity.PtSession;
 import com.benly.pt.entity.PtTrack;
@@ -32,6 +30,10 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * 최종 채점의 DB 작업. 카드 한 장 저장은 CardScoringTx가 하고,
+ * 여기서는 채점 계획 읽기, 카드 상태 읽기, 세션 마무리만 한다.
+ */
 @Service
 @RequiredArgsConstructor
 public class FeedbackScoringTx {
@@ -39,13 +41,13 @@ public class FeedbackScoringTx {
     private final SessionReadRepository sessionReadRepository;
     private final SessionFeedbackRepository sessionFeedbackRepository;
     private final FeedbackRepository feedbackRepository;
-    private final ScoreAxisRepository scoreAxisRepository;
     private final QuestionReadRepository questionReadRepository;
     private final AnswerReadRepository answerReadRepository;
     private final FeedbackContentParser contentParser;
     private final SessionFormatResolver formatResolver;
     private final PtSessionRepository ptSessionRepository;
     private final PtContentCodec ptContentCodec;
+    private final StaleTaskPolicy staleTaskPolicy;
 
     @Transactional(readOnly = true)
     public ScoringPlan loadPlan(Long sessionId) {
@@ -80,7 +82,41 @@ public class FeedbackScoringTx {
         return new ScoringPlan(axisSet.axes(), ctx, axisSet, mains, format, presentation);
     }
 
-    /** 지원자가 준비 화면에서 본 과제 내용을 빠짐없이 채점기에 넘긴다 */
+    /** 세션의 카드 상태를 읽는다. 완료된 카드는 내용까지 풀어서 돌려준다 */
+    @Transactional(readOnly = true)
+    public List<CardSnapshot> loadCards(Long sessionId) {
+        LocalDateTime staleThreshold = staleTaskPolicy.scoringThreshold();
+        return feedbackRepository.findWithQuestionBySessionId(sessionId).stream()
+                .map(f -> new CardSnapshot(
+                        f.getQuestion() == null ? null : f.getQuestion().getId(),
+                        f.isPresentation(),
+                        f.getScoringStatus(),
+                        f.isScoring() && !f.isStale(staleThreshold),
+                        f.getTopicScore(),
+                        f.getQuestion() == null ? null : f.getQuestion().getShortTitle(),
+                        f.isCompleted() ? contentParser.parse(f.getContent()) : null))
+                .toList();
+    }
+
+    /** 이 시도가 아직 현재 시도일 때만 세션 채점을 완료로 바꾼다 */
+    @Transactional
+    public boolean finishSession(Long sessionId, LocalDateTime attempt, int totalScore, SessionSummary summary) {
+        SessionFeedback sf = sessionFeedbackRepository.findBySessionIdForUpdate(sessionId)
+                .orElseThrow(() -> new BusinessException(FeedbackErrorCode.REPORT_NOT_FOUND));
+        if (!sf.isCurrentAttempt(attempt)) {
+            return false;
+        }
+        sf.complete(totalScore, summary.summary(),
+                summary.keyCoachingWeakness(), summary.keyCoachingAction());
+        return true;
+    }
+
+    /** 내 시도일 때만 실패 처리 */
+    @Transactional
+    public void markFailed(Long sessionId, LocalDateTime attempt) {
+        sessionFeedbackRepository.failAttempt(sessionId, attempt);
+    }
+
     private PresentationInput loadPresentation(Long sessionId) {
         PtSession pt = ptSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new BusinessException(FeedbackErrorCode.SESSION_NOT_FOUND));
@@ -127,60 +163,5 @@ public class FeedbackScoringTx {
 
         return new MainQuestionInput(
                 main.getSeq(), main.getContent(), transcripts.get(main.getId()), tails);
-    }
-
-    @Transactional
-    public boolean saveResults(Long sessionId, LocalDateTime attempt, int totalScore,
-                               List<ScoredTopic> topics, ScoredPresentation presentation,
-                               SessionSummary summary) {
-        SessionFeedback sf = sessionFeedbackRepository.findBySessionIdForUpdate(sessionId)
-                .orElseThrow(() -> new BusinessException(FeedbackErrorCode.REPORT_NOT_FOUND));
-        if (!sf.isCurrentAttempt(attempt)) {
-            return false;
-        }
-
-        scoreAxisRepository.deleteBySessionId(sessionId);
-        feedbackRepository.deleteBySessionId(sessionId);
-
-        if (presentation != null) {
-            persistPresentation(sessionId, presentation);
-        }
-        topics.forEach(this::persistTopic);
-
-        sf.complete(totalScore, summary.summary(),
-                summary.keyCoachingWeakness(), summary.keyCoachingAction());
-        return true;
-    }
-
-    /** 내 시도일 때만 실패 처리 */
-    @Transactional
-    public void markFailed(Long sessionId, LocalDateTime attempt) {
-        sessionFeedbackRepository.failAttempt(sessionId, attempt);
-    }
-
-    private void persistPresentation(Long sessionId, ScoredPresentation presentation) {
-        Session session = sessionReadRepository.findById(sessionId)
-                .orElseThrow(() -> new BusinessException(FeedbackErrorCode.SESSION_NOT_FOUND));
-
-        Feedback feedback = feedbackRepository.save(Feedback.presentation(
-                session,
-                contentParser.toJson(presentation.score().content()),
-                presentation.topicScore()));
-
-        presentation.score().axisScores()
-                .forEach((code, value) -> scoreAxisRepository.save(ScoreAxis.create(feedback, code, value)));
-    }
-
-    private void persistTopic(ScoredTopic topic) {
-        Question main = questionReadRepository.findById(topic.mainQuestionId())
-                .orElseThrow(() -> new BusinessException(FeedbackErrorCode.QUESTION_NOT_FOUND));
-
-        main.assignShortTitle(topic.score().shortTitle());
-
-        Feedback feedback = feedbackRepository.save(
-                Feedback.qa(main, contentParser.toJson(topic.score().content()), topic.topicScore()));
-
-        topic.score().axisScores()
-                .forEach((code, value) -> scoreAxisRepository.save(ScoreAxis.create(feedback, code, value)));
     }
 }
