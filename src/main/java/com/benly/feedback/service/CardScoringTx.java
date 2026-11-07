@@ -29,6 +29,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -39,6 +40,7 @@ import java.util.function.Supplier;
 /**
  * 카드 한 장 채점의 DB 작업만 모은다. Claude 호출은 이 트랜잭션 밖에서 한다.
  * 잡기(claim) → 트랜잭션 밖에서 채점 → 저장(complete) 또는 실패(fail) 순서로 쓴다.
+ * 잡을 때 기록한 scoringStartedAt이 시도 번호다. 저장과 실패는 카드를 잠근 뒤 이 번호가 그대로일 때만 반영한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -53,18 +55,20 @@ public class CardScoringTx {
     private final FeedbackContentParser contentParser;
     private final StaleTaskPolicy staleTaskPolicy;
 
-    public record TopicPlan(Long feedbackId, Long mainQuestionId, ScoringContext ctx,
-                            AxisSet axisSet, MainQuestionInput input) {
+    public record TopicPlan(Long feedbackId, LocalDateTime attempt, Long mainQuestionId,
+                            ScoringContext ctx, AxisSet axisSet, MainQuestionInput input) {
     }
 
-    public record PresentationPlan(Long feedbackId, ScoringContext ctx, PresentationInput input) {
+    public record PresentationPlan(Long feedbackId, LocalDateTime attempt,
+                                   ScoringContext ctx, PresentationInput input) {
     }
 
     // ===== 잡기 =====
 
     /**
      * 질문 카드를 채점 상태로 잡는다. 이미 끝났거나 다른 곳에서 채점 중이면 빈 값.
-     * 두 곳에서 동시에 처음 잡으면 question_id 유니크 제약에 걸려 예외가 나고, 호출한 쪽이 건너뛴다.
+     * 기존 카드는 행을 잠근 뒤 판단해서 한 작업만 재시작한다.
+     * 카드가 없을 때 두 곳에서 동시에 만들면 question_id 유니크 제약에 걸려 예외가 나고, 호출한 쪽이 건너뛴다.
      */
     @Transactional
     public Optional<TopicPlan> claimTopic(Long mainQuestionId) {
@@ -74,7 +78,7 @@ public class CardScoringTx {
             return Optional.empty();
         }
 
-        Feedback card = claim(feedbackRepository.findByQuestion_Id(mainQuestionId),
+        Feedback card = claim(feedbackRepository.findByQuestionIdForUpdate(mainQuestionId),
                 () -> Feedback.scoringQa(main));
         if (card == null) {
             return Optional.empty();
@@ -83,6 +87,7 @@ public class CardScoringTx {
         Session session = main.getSession();
         return Optional.of(new TopicPlan(
                 card.getId(),
+                card.getScoringStartedAt(),
                 mainQuestionId,
                 ScoringContext.from(session),
                 AxisSet.resolve(session.getStage(), session.getCompanyType()),
@@ -107,7 +112,8 @@ public class CardScoringTx {
         }
 
         return Optional.of(new PresentationPlan(
-                card.getId(), ScoringContext.from(session), presentationInput(pt)));
+                card.getId(), card.getScoringStartedAt(),
+                ScoringContext.from(session), presentationInput(pt)));
     }
 
     /** 카드가 없으면 새로 만들고, 실패했거나 오래 멈췄으면 다시 잡는다. 나머지는 null */
@@ -125,34 +131,48 @@ public class CardScoringTx {
 
     // ===== 저장 =====
 
+    /** 이 시도가 아직 유효하면 저장하고 true. 다른 시도가 가져갔으면 버리고 false */
     @Transactional
-    public void completeTopic(Long feedbackId, ScoredTopic topic) {
-        Feedback card = getCard(feedbackId);
+    public boolean completeTopic(Long feedbackId, LocalDateTime attempt, ScoredTopic topic) {
+        Optional<Feedback> owned = ownedCard(feedbackId, attempt);
+        if (owned.isEmpty()) {
+            return false;
+        }
+        Feedback card = owned.get();
         card.getQuestion().assignShortTitle(topic.score().shortTitle());
         card.complete(contentParser.toJson(topic.score().content()), topic.topicScore());
         replaceAxes(card, topic.score().axisScores());
+        return true;
     }
 
     @Transactional
-    public void completePresentation(Long feedbackId, ScoredPresentation presentation) {
-        Feedback card = getCard(feedbackId);
+    public boolean completePresentation(Long feedbackId, LocalDateTime attempt,
+                                        ScoredPresentation presentation) {
+        Optional<Feedback> owned = ownedCard(feedbackId, attempt);
+        if (owned.isEmpty()) {
+            return false;
+        }
+        Feedback card = owned.get();
         card.complete(contentParser.toJson(presentation.score().content()), presentation.topicScore());
         replaceAxes(card, presentation.score().axisScores());
+        return true;
     }
 
+    /** 이 시도가 아직 유효할 때만 실패로 바꾼다. 다른 시도가 끝낸 카드는 건드리지 않는다 */
     @Transactional
-    public void failCard(Long feedbackId) {
-        feedbackRepository.findById(feedbackId).ifPresent(Feedback::fail);
+    public void failCard(Long feedbackId, LocalDateTime attempt) {
+        ownedCard(feedbackId, attempt).ifPresent(Feedback::fail);
+    }
+
+    /** 카드를 잠그고, 지금 진행 중인 시도가 이 시도일 때만 돌려준다 */
+    private Optional<Feedback> ownedCard(Long feedbackId, LocalDateTime attempt) {
+        return feedbackRepository.findByIdForUpdate(feedbackId)
+                .filter(card -> card.isAttempt(attempt));
     }
 
     private void replaceAxes(Feedback card, Map<String, Integer> axisScores) {
         scoreAxisRepository.deleteByFeedbackId(card.getId());
         axisScores.forEach((code, value) -> scoreAxisRepository.save(ScoreAxis.create(card, code, value)));
-    }
-
-    private Feedback getCard(Long feedbackId) {
-        return feedbackRepository.findById(feedbackId)
-                .orElseThrow(() -> new BusinessException(FeedbackErrorCode.REPORT_NOT_FOUND));
     }
 
     // ===== 채점 입력 만들기 =====

@@ -46,6 +46,7 @@ public class Feedback extends BaseEntity {
     @Column(name = "scoring_status", nullable = false, length = 20)
     private FeedbackStatus scoringStatus;
 
+    // 채점 시작 시각. 카드 채점의 시도 번호로도 쓴다
     @Column(name = "scoring_started_at")
     private LocalDateTime scoringStartedAt;
 
@@ -100,7 +101,9 @@ public class Feedback extends BaseEntity {
         this.scoringStatus = FeedbackStatus.FAILED;
     }
 
-    /** 실패했거나 오래 멈춘 카드를 다시 채점 상태로 되돌린다 */
+    /**
+     * 실패했거나 오래 멈춘 카드를 다시 채점 상태로 되돌린다. 시작 시각이 새 시도 번호가 된다
+     */
     public void restart() {
         this.content = null;
         this.topicScore = null;
@@ -122,14 +125,25 @@ public class Feedback extends BaseEntity {
         return scoringStatus == FeedbackStatus.SCORING;
     }
 
-    /** 채점 중인데 기준 시각보다 먼저 시작했으면 멈춘 것으로 본다 */
+    /**
+     * 채점 중인데 기준 시각보다 먼저 시작했으면 멈춘 것으로 본다
+     */
     public boolean isStale(LocalDateTime threshold) {
         return isScoring() && scoringStartedAt != null && scoringStartedAt.isBefore(threshold);
     }
 
-    /** 다시 채점해야 하는 카드인지. 실패했거나 오래 멈춘 경우 */
+    /**
+     * 다시 채점해야 하는 카드인지. 실패했거나 오래 멈춘 경우
+     */
     public boolean needsRescore(LocalDateTime staleThreshold) {
         return scoringStatus == FeedbackStatus.FAILED || isStale(staleThreshold);
+    }
+
+    /**
+     * 지금 진행 중인 채점이 이 시도인지. 늦게 끝난 이전 시도가 결과를 덮어쓰지 않게 한다
+     */
+    public boolean isAttempt(LocalDateTime attempt) {
+        return isScoring() && attempt != null && attempt.equals(scoringStartedAt);
     }
 
     private static LocalDateTime now() {
