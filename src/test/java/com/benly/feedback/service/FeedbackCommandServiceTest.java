@@ -9,6 +9,7 @@ import com.benly.feedback.dto.ScoringResult.MainQuestionScore;
 import com.benly.feedback.dto.ScoringResult.SessionSummary;
 import com.benly.feedback.entity.Axis;
 import com.benly.feedback.entity.AxisSet;
+import com.benly.feedback.entity.SessionFormat;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -47,7 +48,8 @@ class FeedbackCommandServiceTest {
         ScoringContext ctx = new ScoringContext("IT", "PERSONALITY", "백엔드");
         return new ScoringPlan(
                 axisSet.axes(), ctx, axisSet,
-                List.of(new ScoringPlan.MainInput(100L, input)));
+                List.of(new ScoringPlan.MainInput(100L, input)),
+                SessionFormat.QA);
     }
 
     /** 모든 축을 100점으로 채운 결과 (가중합도 100이 됨) */

@@ -90,7 +90,7 @@ class FeedbackControllerTest {
     void getReport() throws Exception {
         // given
         FeedbackReportResponse report = new FeedbackReportResponse(
-                SESSION_ID, null, null, 83, "총평", null, List.of(), null);
+                SESSION_ID, null, null, 83, null, "총평", null, List.of());
         given(feedbackQueryService.getReport(any(), any()))
                 .willReturn(report);
 

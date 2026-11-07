@@ -23,7 +23,7 @@ import java.util.concurrent.Executors;
 public class FeedbackCommandService {
 
     private final FeedbackScoringClient scoringClient;
-    private final FeedbackScoringTx scoringTx;   // DB는 이쪽에 위임
+    private final FeedbackScoringTx scoringTx;
 
     @Async
     public void score(Long sessionId, LocalDateTime attempt) {
@@ -34,7 +34,10 @@ public class FeedbackCommandService {
             List<ScoredTopic> topics = scoreTopicsInParallel(plan);
             long topicsDoneAt = System.currentTimeMillis();
 
-            int totalScore = averageTopicScore(topics);
+            // 발표 카드 채점은 PT 채점 이슈에서 붙인다. 지금은 발표 점수 없이 계산
+            int totalScore = TotalScoreCalculator.calculate(
+                    plan.format(), null,
+                    topics.stream().map(ScoredTopic::topicScore).toList()).total();
             int totalSkipped = topics.stream().mapToInt(ScoredTopic::skippedCount).sum();
 
             SessionSummary summary = scoringClient.summarize(
@@ -48,8 +51,9 @@ public class FeedbackCommandService {
                 return;
             }
 
-            log.info("채점 단계 sessionId={} 주제수={} 주제채점={}ms 총평={}ms 전체={}ms",
+            log.info("채점 단계 sessionId={} 형식={} 주제수={} 주제채점={}ms 총평={}ms 전체={}ms",
                     sessionId,
+                    plan.format(),
                     topics.size(),
                     topicsDoneAt - startedAt,
                     summaryDoneAt - topicsDoneAt,
@@ -61,9 +65,6 @@ public class FeedbackCommandService {
         }
     }
 
-    /**
-     * 메인 질문들을 동시에 채점한다 (서로 독립적).
-     */
     private List<ScoredTopic> scoreTopicsInParallel(ScoringPlan plan) {
         ExecutorService pool = Executors.newFixedThreadPool(Math.max(1, plan.mains().size()));
         try {
@@ -76,9 +77,6 @@ public class FeedbackCommandService {
         }
     }
 
-    /**
-     * 한 주제 채점: 판단은 입력/점수 객체에게 위임한다.
-     */
     private ScoredTopic scoreOne(ScoringPlan plan, ScoringPlan.MainInput mi) {
         MainQuestionInput in = mi.input();
 
@@ -88,11 +86,5 @@ public class FeedbackCommandService {
 
         int topicScore = plan.axisSet().weightedScore(score.axisScores());
         return new ScoredTopic(mi.mainQuestionId(), score, topicScore, in.skippedCount());
-    }
-
-    private int averageTopicScore(List<ScoredTopic> topics) {
-        if (topics.isEmpty()) return 0;
-        int sum = topics.stream().mapToInt(ScoredTopic::topicScore).sum();
-        return Math.round((float) sum / topics.size());
     }
 }

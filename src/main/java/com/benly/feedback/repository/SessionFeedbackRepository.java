@@ -26,11 +26,7 @@ public interface SessionFeedbackRepository extends JpaRepository<SessionFeedback
                    sf.totalScore = null,
                    sf.summary = null,
                    sf.keyCoaching = null,
-                   sf.coachingAction = null,
-                   sf.fillerWordCount = null,
-                   sf.fillerWordNote = null,
-                   sf.speechSpeed = null,
-                   sf.speechSpeedNote = null
+                   sf.coachingAction = null
              WHERE sf.session.id = :sessionId AND sf.status = :from
             """)
     int restartScoring(@Param("sessionId") Long sessionId,

@@ -10,11 +10,14 @@ import java.util.List;
 
 public interface FeedbackRepository extends JpaRepository<Feedback, Long> {
 
-    @Query("SELECT f FROM Feedback f JOIN FETCH f.question q " +
-            "WHERE q.session.id = :sessionId ORDER BY q.seq ASC")
+    @Query("""
+            SELECT f FROM Feedback f LEFT JOIN FETCH f.question q
+            WHERE f.session.id = :sessionId
+            ORDER BY q.seq ASC NULLS FIRST
+            """)
     List<Feedback> findWithQuestionBySessionId(@Param("sessionId") Long sessionId);
 
     @Modifying
-    @Query("DELETE FROM Feedback f WHERE f.question.session.id = :sessionId")
+    @Query("DELETE FROM Feedback f WHERE f.session.id = :sessionId")
     void deleteBySessionId(@Param("sessionId") Long sessionId);
 }

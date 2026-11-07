@@ -1,0 +1,18 @@
+[면접 정보]
+기업 유형: {{companyType}}
+면접 단계: {{stage}}
+직무: {{jobTitle}}
+
+[평가축]
+{{axes}}
+
+[메인 질문]
+<main_question>{{question}}</main_question>
+<main_answer>{{answer}}</main_answer>
+
+[꼬리 질문들, 각 항목을 따로 평가]
+{{tails}}
+
+[다시 확인]
+메인 항목과 메인 improvedAfter는 <main_answer>만 근거로 씁니다. 꼬리 답변의 내용을 절대 가져오지 않습니다.
+모든 improvedAfter는 해당 답변에서 지원자가 말한 내용만 다시 정리하고, 말하지 않은 사실을 만들지 않습니다.
