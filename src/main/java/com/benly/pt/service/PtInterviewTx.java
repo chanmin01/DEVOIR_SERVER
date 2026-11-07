@@ -205,7 +205,6 @@ public class PtInterviewTx {
         detail.submitAudioPresentation(
                 requestId, text, hash, durationSec, plan.admittedAt(), clock.instant());
         detail.clearOperation();
-        detail.clearOperation();
         events.publishEvent(new PresentationSubmittedEvent(sessionId));
         return PtProgressResponse.from(detail, clock.instant());
     }
