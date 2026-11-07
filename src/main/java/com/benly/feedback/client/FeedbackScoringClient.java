@@ -286,9 +286,20 @@ public class FeedbackScoringClient {
 
     private String buildSummaryUser(ScoringContext ctx, int totalScore,
                                     List<MainQuestionScore> perQuestion, int totalSkipped) {
-        String perQ = perQuestion.stream()
-                .map(q -> "- %s: %s".formatted(nvl(q.shortTitle()), nvl(q.content().weak())))
-                .collect(Collectors.joining("\n"));
+        StringBuilder perQ = new StringBuilder();
+        for (MainQuestionScore q : perQuestion) {
+            FeedbackContent c = q.content();
+            perQ.append("[").append(nvl(q.shortTitle())).append("]\n");
+            perQ.append("- 잘한 점: ").append(nvl(c.good())).append("\n");
+            perQ.append("- 약점: ").append(nvl(c.weak())).append("\n");
+
+            List<FeedbackContent.TailContent> tails = c.tails() == null ? List.of() : c.tails();
+            for (int i = 0; i < tails.size(); i++) {
+                perQ.append("- 꼬리 ").append(i + 1).append(" 약점: ")
+                        .append(nvl(tails.get(i).weak())).append("\n");
+            }
+            perQ.append("\n");
+        }
 
         String skipNote = totalSkipped > 0
                 ? "지원자는 질문 %d개를 건너뛰었습니다. 총평에 이 점을 한 번만 짚어 주세요.".formatted(totalSkipped)
@@ -299,7 +310,7 @@ public class FeedbackScoringClient {
                 "stage", nvl(ctx.stage()),
                 "totalScore", String.valueOf(totalScore),
                 "skipNote", skipNote,
-                "perQuestion", perQ
+                "perQuestion", perQ.toString().trim()
         ));
     }
 
