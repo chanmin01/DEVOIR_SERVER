@@ -43,18 +43,6 @@ public class SessionFeedback extends BaseEntity {
     @Column(name = "scoring_started_at")
     private LocalDateTime scoringStartedAt;
 
-    @Column(name = "filler_word_count")
-    private Integer fillerWordCount;
-
-    @Column(name = "filler_word_note", length = 200)
-    private String fillerWordNote;
-
-    @Column(name = "speech_speed")
-    private Integer speechSpeed;
-
-    @Column(name = "speech_speed_note", length = 200)
-    private String speechSpeedNote;
-
     private SessionFeedback(Session session) {
         this.session = session;
         this.status = FeedbackStatus.SCORING;
@@ -70,10 +58,6 @@ public class SessionFeedback extends BaseEntity {
         this.summary = null;
         this.keyCoaching = null;
         this.coachingAction = null;
-        this.fillerWordCount = null;
-        this.fillerWordNote = null;
-        this.speechSpeed = null;
-        this.speechSpeedNote = null;
         this.status = FeedbackStatus.SCORING;
         this.scoringStartedAt = newAttemptTime();
     }
@@ -85,14 +69,6 @@ public class SessionFeedback extends BaseEntity {
         this.keyCoaching = keyCoaching;
         this.coachingAction = coachingAction;
         this.status = FeedbackStatus.COMPLETED;
-    }
-
-    public void applyDelivery(Integer speechSpeed, String speechSpeedNote,
-                              Integer fillerWordCount, String fillerWordNote) {
-        this.speechSpeed = speechSpeed;
-        this.speechSpeedNote = speechSpeedNote;
-        this.fillerWordCount = fillerWordCount;
-        this.fillerWordNote = fillerWordNote;
     }
 
     public void fail() {
