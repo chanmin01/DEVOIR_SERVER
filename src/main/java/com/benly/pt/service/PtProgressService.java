@@ -1,5 +1,6 @@
 package com.benly.pt.service;
 
+import com.benly.feedback.event.PresentationSubmittedEvent;
 import com.benly.global.exception.BusinessException;
 import com.benly.pt.dto.PtProgressResponse;
 import com.benly.pt.dto.PtTextPresentationRequest;
@@ -11,6 +12,7 @@ import com.benly.session.entity.SessionStatus;
 import com.benly.session.repository.SessionRepository;
 import com.benly.user.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,17 +25,20 @@ public class PtProgressService {
     private final PtSessionRepository details;
     private final SessionRepository sessions;
     private final UserRepository users;
+    private final ApplicationEventPublisher events;
     private final Clock clock;
 
     public PtProgressService(
             PtSessionRepository details,
             SessionRepository sessions,
             UserRepository users,
+            ApplicationEventPublisher events,
             @Qualifier("ptClock") Clock clock
     ) {
         this.details = details;
         this.sessions = sessions;
         this.users = users;
+        this.events = events;
         this.clock = clock;
     }
 
@@ -90,6 +95,8 @@ public class PtProgressService {
                 request.transcript().strip(),
                 clock.instant()
         );
+
+        events.publishEvent(new PresentationSubmittedEvent(sessionId));
 
         return PtProgressResponse.from(detail, clock.instant());
     }

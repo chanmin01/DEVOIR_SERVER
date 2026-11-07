@@ -5,6 +5,7 @@ import com.benly.feedback.entity.Axis;
 import com.benly.feedback.entity.AxisSet;
 import com.benly.feedback.entity.CardType;
 import com.benly.feedback.entity.Feedback;
+import com.benly.feedback.entity.FeedbackStatus;
 import com.benly.feedback.entity.ScoreAxis;
 import com.benly.question.entity.Answer;
 import com.benly.question.entity.AnswerType;
@@ -61,7 +62,8 @@ public class FeedbackReportAssembler {
     }
 
     /**
-     * cards 조립: 발표 카드가 있으면 맨 앞, 이어서 질문 카드와 그 꼬리들.
+     * cards 조립: 질문 기준으로 만든다. 아직 피드백 행이 없는 질문도 SCORING 카드로 자리를 잡는다.
+     * PT면 발표 카드가 맨 앞, 이어서 메인 질문 순서대로 질문 카드와 그 꼬리들.
      */
     public List<Card> assembleCards(
             List<Feedback> feedbacks,
@@ -76,29 +78,41 @@ public class FeedbackReportAssembler {
                 .filter(q -> q.getParent() != null)
                 .collect(Collectors.groupingBy(q -> q.getParent().getId()));
 
+        Map<Long, Feedback> cardByQuestion = feedbacks.stream()
+                .filter(f -> !f.isPresentation() && f.getQuestion() != null)
+                .collect(Collectors.toMap(f -> f.getQuestion().getId(), f -> f, (a, b) -> a));
+
         List<Card> cards = new ArrayList<>();
-        for (Feedback fb : feedbacks) {
-            FeedbackContent content = contentParser.parse(fb.getContent());
-            cards.add(fb.isPresentation()
-                    ? presentationCard(fb, content, meta)
-                    : questionCard(fb, content, tailsByParent, answerByQuestion));
+
+        if (meta != null) {
+            Feedback presentation = feedbacks.stream()
+                    .filter(Feedback::isPresentation).findFirst().orElse(null);
+            cards.add(presentationCard(presentation, meta));
         }
+
+        allQuestions.stream()
+                .filter(Question::isMain)
+                .sorted(Comparator.comparing(Question::getSeq))
+                .forEach(main -> cards.add(questionCard(
+                        main, cardByQuestion.get(main.getId()), tailsByParent, answerByQuestion)));
+
         return cards;
     }
 
-    private Card questionCard(Feedback fb, FeedbackContent content,
+    private Card questionCard(Question main, Feedback fb,
                               Map<Long, List<Question>> tailsByParent,
                               Map<Long, Answer> answerByQuestion) {
-        Question main = fb.getQuestion();
         Answer answer = answerByQuestion.get(main.getId());
         boolean skipped = isSkipped(answer);
+        FeedbackContent content = completedContent(fb);
 
         return new Card(
                 CardType.QA.name(),
+                statusOf(fb),
                 main.getId(),
                 main.getSeq(),
                 main.getShortTitle(),
-                fb.getTopicScore(),
+                scoreOf(fb),
                 main.getContent(),
                 skipped ? null : transcriptOf(answer),
                 skipped,
@@ -115,22 +129,24 @@ public class FeedbackReportAssembler {
         );
     }
 
-    private Card presentationCard(Feedback fb, FeedbackContent content, PresentationMeta meta) {
-        String transcript = meta == null ? null : meta.transcript();
+    private Card presentationCard(Feedback fb, PresentationMeta meta) {
+        String transcript = meta.transcript();
         boolean skipped = transcript == null || transcript.isBlank();
-        String title = meta == null ? null : meta.taskTitle();
+        String title = meta.taskTitle();
+        FeedbackContent content = completedContent(fb);
 
         return new Card(
                 CardType.PRESENTATION.name(),
+                statusOf(fb),
                 null,
                 0,
                 title,
-                fb.getTopicScore(),
+                scoreOf(fb),
                 title,
                 skipped ? null : transcript,
                 skipped,
-                meta == null ? null : meta.durationSeconds(),
-                meta == null ? null : meta.track(),
+                meta.durationSeconds(),
+                meta.track(),
                 requirementsOf(content),
                 skipped || content == null ? null : content.good(),
                 skipped || content == null ? null : content.weak(),
@@ -140,6 +156,20 @@ public class FeedbackReportAssembler {
                 skipped ? null : outlineOf(content),
                 List.of()
         );
+    }
+
+    /** 피드백 행이 아직 없으면 채점 대기 중인 카드로 본다 */
+    private String statusOf(Feedback fb) {
+        return fb == null ? FeedbackStatus.SCORING.name() : fb.getScoringStatus().name();
+    }
+
+    private Integer scoreOf(Feedback fb) {
+        return fb != null && fb.isCompleted() ? fb.getTopicScore() : null;
+    }
+
+    /** 채점이 끝난 카드만 내용을 푼다. 채점 중이거나 실패한 카드는 피드백 필드를 비운다 */
+    private FeedbackContent completedContent(Feedback fb) {
+        return fb != null && fb.isCompleted() ? contentParser.parse(fb.getContent()) : null;
     }
 
     private List<Requirement> requirementsOf(FeedbackContent content) {
