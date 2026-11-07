@@ -48,23 +48,56 @@ public class FeedbackQueryService {
         FeedbackStatus status = sf.isStale(staleTaskPolicy.scoringThreshold())
                 ? FeedbackStatus.FAILED
                 : sf.getStatus();
-        return FeedbackStatusResponse.of(sessionId, status);
+
+        List<Question> questions = questionReadRepository.findBySession_IdOrderBySeqAsc(sessionId);
+        int totalCards = (int) questions.stream().filter(Question::isMain).count()
+                + (formatResolver.resolve(sessionId) == SessionFormat.PT ? 1 : 0);
+        int completedCards = (int) feedbackRepository.findWithQuestionBySessionId(sessionId).stream()
+                .filter(Feedback::isCompleted)
+                .count();
+
+        return FeedbackStatusResponse.of(sessionId, status, completedCards, totalCards);
     }
 
+    /**
+     * 채점 중에도 조회할 수 있다. 끝난 카드는 피드백까지, 아직인 카드는 질문과 답변만 내려간다.
+     * 총점, 총평, 핵심 코칭, 레이더, 점수 구성은 세션 채점이 끝난 뒤에만 채운다.
+     * 채점이 실패했거나 오래 멈췄으면 404.
+     */
     public FeedbackReportResponse getReport(Long userId, Long sessionId) {
         Session session = validateOwnerShip(userId, sessionId);
 
         SessionFeedback sf = sessionFeedbackRepository.findBySession_Id(sessionId)
                 .orElseThrow(() -> new BusinessException(FeedbackErrorCode.REPORT_NOT_FOUND));
-        if (!sf.isCompleted()) {
+
+        boolean completed = sf.isCompleted();
+        boolean scoring = sf.isScoring() && !sf.isStale(staleTaskPolicy.scoringThreshold());
+        if (!completed && !scoring) {
             throw new BusinessException(FeedbackErrorCode.REPORT_NOT_FOUND);
         }
 
         SessionFormat format = formatResolver.resolve(sessionId);
         List<Feedback> feedbacks = feedbackRepository.findWithQuestionBySessionId(sessionId);
-        List<ScoreAxis> scoreAxes = scoreAxisRepository.findBySessionId(sessionId);
         List<Question> allQuestions = questionReadRepository.findBySession_IdOrderBySeqAsc(sessionId);
         List<Answer> allAnswers = answerReadRepository.findBySessionId(sessionId);
+
+        List<Card> cards = assembler.assembleCards(feedbacks, allQuestions, allAnswers,
+                format == SessionFormat.PT ? presentationMetaOf(sessionId) : null);
+
+        Meta meta = new Meta(
+                format.name(),
+                session.getCompanyType(),
+                session.getStage(),
+                session.getCompanyName(),
+                session.getJobTitle(),
+                KstTime.format(session.getCreatedAt())
+        );
+
+        if (!completed) {
+            return new FeedbackReportResponse(
+                    sessionId, FeedbackStatus.SCORING.name(), meta,
+                    null, null, null, null, null, cards);
+        }
 
         Feedback presentation = feedbacks.stream().filter(Feedback::isPresentation).findFirst().orElse(null);
         boolean ptWithPresentation = format == SessionFormat.PT && presentation != null;
@@ -72,21 +105,13 @@ public class FeedbackQueryService {
         AxisSet radarSet = ptWithPresentation
                 ? AxisSet.PT
                 : AxisSet.resolve(session.getStage(), session.getCompanyType());
-        Radar radar = assembler.assembleRadar(radarSet, scoreAxes,
+        Radar radar = assembler.assembleRadar(radarSet, scoreAxisRepository.findBySessionId(sessionId),
                 ptWithPresentation ? CardType.PRESENTATION : null);
-        List<Card> cards = assembler.assembleCards(feedbacks, allQuestions, allAnswers,
-                format == SessionFormat.PT ? presentationMetaOf(sessionId) : null);
 
         return new FeedbackReportResponse(
                 sessionId,
-                new Meta(
-                        format.name(),
-                        session.getCompanyType(),
-                        session.getStage(),
-                        session.getCompanyName(),
-                        session.getJobTitle(),
-                        KstTime.format(session.getCreatedAt())
-                ),
+                FeedbackStatus.COMPLETED.name(),
+                meta,
                 new KeyCoaching(sf.getKeyCoaching(), sf.getCoachingAction()),
                 sf.getTotalScore(),
                 ptWithPresentation ? breakdownOf(presentation, feedbacks) : null,

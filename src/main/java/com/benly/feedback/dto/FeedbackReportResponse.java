@@ -4,15 +4,18 @@ import java.util.List;
 
 /**
  * 리포트 조회(GET /sessions/{id}/feedback) 응답. 노션 명세 기준.
+ * 채점 중(status SCORING)에도 조회할 수 있고, 그때는 끝난 카드만 피드백이 채워진다.
+ * 총점, 총평, 핵심 코칭, 레이더, 점수 구성은 세션 채점이 끝난 뒤에만 채워진다.
  */
 public record FeedbackReportResponse(
         Long sessionId,
+        String status,                    // SCORING / COMPLETED
         Meta meta,
-        KeyCoaching keyCoaching,
-        Integer totalScore,
-        ScoreBreakdown scoreBreakdown,
-        String verdict,
-        Radar radar,
+        KeyCoaching keyCoaching,          // 채점 중이면 null
+        Integer totalScore,               // 채점 중이면 null
+        ScoreBreakdown scoreBreakdown,    // PT이고 채점이 끝났을 때만
+        String verdict,                   // 채점 중이면 null
+        Radar radar,                      // 채점 중이면 null
         List<Card> cards
 ) {
 
@@ -51,6 +54,7 @@ public record FeedbackReportResponse(
 
     public record Card(
             String cardType,
+            String status,                    // SCORING / COMPLETED / FAILED. COMPLETED가 아니면 피드백 필드는 null
             Long questionId,
             Integer num,
             String shortTitle,

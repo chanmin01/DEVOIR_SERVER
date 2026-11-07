@@ -5,6 +5,8 @@ import com.benly.feedback.entity.FeedbackStatus;
 import com.benly.feedback.entity.SessionFeedback;
 import com.benly.feedback.repository.*;
 import com.benly.global.recovery.StaleTaskPolicy;
+import com.benly.pt.repository.PtSessionRepository;
+import com.benly.pt.service.PtContentCodec;
 import com.benly.session.entity.Session;
 import com.benly.user.entity.User;
 import org.junit.jupiter.api.DisplayName;
@@ -35,6 +37,9 @@ class FeedbackStatusStaleTest {
     @Mock private AnswerReadRepository answerReadRepository;
     @Mock private FeedbackReportAssembler assembler;
     @Mock private StaleTaskPolicy staleTaskPolicy;
+    @Mock private SessionFormatResolver formatResolver;
+    @Mock private PtSessionRepository ptSessionRepository;
+    @Mock private PtContentCodec ptContentCodec;
 
     @InjectMocks
     private FeedbackQueryService service;
