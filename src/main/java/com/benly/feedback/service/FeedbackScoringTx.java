@@ -1,11 +1,13 @@
 package com.benly.feedback.service;
 
+import com.benly.feedback.dto.ScoredPresentation;
+import com.benly.feedback.dto.ScoredTopic;
 import com.benly.feedback.dto.ScoringContext;
 import com.benly.feedback.dto.ScoringPlan;
 import com.benly.feedback.dto.ScoringResult.MainQuestionInput;
+import com.benly.feedback.dto.ScoringResult.PresentationInput;
 import com.benly.feedback.dto.ScoringResult.SessionSummary;
 import com.benly.feedback.dto.ScoringResult.TailInput;
-import com.benly.feedback.dto.ScoredTopic;
 import com.benly.feedback.entity.AxisSet;
 import com.benly.feedback.entity.Feedback;
 import com.benly.feedback.entity.ScoreAxis;
@@ -14,6 +16,11 @@ import com.benly.feedback.entity.SessionFormat;
 import com.benly.feedback.exception.FeedbackErrorCode;
 import com.benly.feedback.repository.*;
 import com.benly.global.exception.BusinessException;
+import com.benly.pt.dto.PtTaskContent;
+import com.benly.pt.entity.PtSession;
+import com.benly.pt.entity.PtTrack;
+import com.benly.pt.repository.PtSessionRepository;
+import com.benly.pt.service.PtContentCodec;
 import com.benly.question.entity.Answer;
 import com.benly.question.entity.Question;
 import com.benly.session.entity.Session;
@@ -37,6 +44,8 @@ public class FeedbackScoringTx {
     private final AnswerReadRepository answerReadRepository;
     private final FeedbackContentParser contentParser;
     private final SessionFormatResolver formatResolver;
+    private final PtSessionRepository ptSessionRepository;
+    private final PtContentCodec ptContentCodec;
 
     @Transactional(readOnly = true)
     public ScoringPlan loadPlan(Long sessionId) {
@@ -66,7 +75,32 @@ public class FeedbackScoringTx {
                 .map(m -> new ScoringPlan.MainInput(m.getId(), toInput(m, tailsByParent, transcripts)))
                 .toList();
 
-        return new ScoringPlan(axisSet.axes(), ctx, axisSet, mains, format);
+        PresentationInput presentation = format == SessionFormat.PT ? loadPresentation(sessionId) : null;
+
+        return new ScoringPlan(axisSet.axes(), ctx, axisSet, mains, format, presentation);
+    }
+
+    private PresentationInput loadPresentation(Long sessionId) {
+        PtSession pt = ptSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new BusinessException(FeedbackErrorCode.SESSION_NOT_FOUND));
+        PtTaskContent task = ptContentCodec.content(pt.getTask().getContentJson());
+
+        PtTrack track = pt.getTrack();
+        String guidance = (track == null || task.trackGuidance() == null)
+                ? null
+                : task.trackGuidance().get(track);
+
+        return new PresentationInput(
+                task.title(),
+                task.problemSituation(),
+                task.constraints() == null ? List.of() : task.constraints(),
+                track == null ? null : track.name(),
+                track == null ? null : track.getLabel(),
+                guidance,
+                task.presentationRequirements() == null ? List.of() : task.presentationRequirements(),
+                pt.getPresentationDurationSec(),
+                pt.getPresentationTranscript()
+        );
     }
 
     private MainQuestionInput toInput(Question main,
@@ -88,7 +122,8 @@ public class FeedbackScoringTx {
 
     @Transactional
     public boolean saveResults(Long sessionId, LocalDateTime attempt, int totalScore,
-                               List<ScoredTopic> topics, SessionSummary summary) {
+                               List<ScoredTopic> topics, ScoredPresentation presentation,
+                               SessionSummary summary) {
         SessionFeedback sf = sessionFeedbackRepository.findBySessionIdForUpdate(sessionId)
                 .orElseThrow(() -> new BusinessException(FeedbackErrorCode.REPORT_NOT_FOUND));
         if (!sf.isCurrentAttempt(attempt)) {
@@ -98,6 +133,9 @@ public class FeedbackScoringTx {
         scoreAxisRepository.deleteBySessionId(sessionId);
         feedbackRepository.deleteBySessionId(sessionId);
 
+        if (presentation != null) {
+            persistPresentation(sessionId, presentation);
+        }
         topics.forEach(this::persistTopic);
 
         sf.complete(totalScore, summary.summary(),
@@ -109,6 +147,19 @@ public class FeedbackScoringTx {
     @Transactional
     public void markFailed(Long sessionId, LocalDateTime attempt) {
         sessionFeedbackRepository.failAttempt(sessionId, attempt);
+    }
+
+    private void persistPresentation(Long sessionId, ScoredPresentation presentation) {
+        Session session = sessionReadRepository.findById(sessionId)
+                .orElseThrow(() -> new BusinessException(FeedbackErrorCode.SESSION_NOT_FOUND));
+
+        Feedback feedback = feedbackRepository.save(Feedback.presentation(
+                session,
+                contentParser.toJson(presentation.score().content()),
+                presentation.topicScore()));
+
+        presentation.score().axisScores()
+                .forEach((code, value) -> scoreAxisRepository.save(ScoreAxis.create(feedback, code, value)));
     }
 
     private void persistTopic(ScoredTopic topic) {
