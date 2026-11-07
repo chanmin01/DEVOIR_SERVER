@@ -30,6 +30,14 @@ public enum AxisSet {
             new Axis("RESULT", "결과 제시", 20),
             new Axis("AUTHENTICITY", "진정성·일관성", 10),
             new Axis("FIT", "직무·조직 적합", 10)
+    )),
+    PT(List.of(
+            new Axis("STRUCTURE", "구조·논리 전개", 20),
+            new Axis("RELEVANCE", "과제 적합성", 20),
+            new Axis("EVIDENCE", "근거·구체성", 20),
+            new Axis("DEPTH", "이해 깊이·실행 가능성", 15),
+            new Axis("DELIVERY", "전달력·설득력", 15),
+            new Axis("CONSISTENCY", "일관성", 10)
     ));
 
     private final List<Axis> axes;
@@ -43,8 +51,8 @@ public enum AxisSet {
     }
 
     /**
-     * 세션의 단계/기업유형으로 어떤 축 세트를 쓸지 결정
-     * - 인성 면접이면 무조건 PERSONALITY
+     * 질문 카드에 쓸 축 세트
+     * - 인성 면접이면 PERSONALITY
      * - 기술 면접인데 금융IT면 FINANCE_TECHNICAL, 그 외 TECHNICAL
      */
     public static AxisSet resolve(String stage, String companyType) {
@@ -58,9 +66,12 @@ public enum AxisSet {
     }
 
     /**
-     * 6축 원점수를 받아 가중합(topic_score) 계산
-     * rawScores: 축코드 -> 0~100 점수
+     * 육각형에 쓸 축 세트. PT는 발표 카드 축만 그린다.
      */
+    public static AxisSet forRadar(SessionFormat format, String stage, String companyType) {
+        return format == SessionFormat.PT ? PT : resolve(stage, companyType);
+    }
+
     public int weightedScore(Map<String, Integer> rawScores) {
         int sum = 0;
         for (Axis axis : axes) {
