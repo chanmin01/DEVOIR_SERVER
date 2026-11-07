@@ -85,6 +85,18 @@ public class FeedbackCommandService {
     }
 
     /**
+     * 미리 채점 카드가 늦게 끝나 모든 카드가 모였으면, 실패했던 세션 채점을 이어서 마무리한다.
+     * 리스너의 비동기 스레드에서 불리므로 score를 같은 스레드에서 바로 실행한다.
+     * 새 시도 번호로 돌기 때문에 사용자가 동시에 재채점을 요청해도 finishSession에서 한쪽만 저장된다.
+     */
+    public void resumeIfReady(Long sessionId) {
+        scoringTx.reopenIfAllCardsDone(sessionId).ifPresent(attempt -> {
+            log.info("늦게 끝난 카드로 세션 채점 재개 sessionId={}", sessionId);
+            score(sessionId, attempt);
+        });
+    }
+
+    /**
      * 모든 카드가 COMPLETED가 될 때까지 빠진 카드는 채점하고, 다른 곳에서 채점 중인 카드는 기다린다.
      */
     List<CardSnapshot> fillCards(Long sessionId, ScoringPlan plan) throws InterruptedException {

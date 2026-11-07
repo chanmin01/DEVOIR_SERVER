@@ -22,6 +22,7 @@ import org.mockito.quality.Strictness;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.BDDMockito.given;
@@ -146,5 +147,45 @@ class FeedbackCommandServiceTest {
 
         verify(cardScoringService, never()).scorePresentation(anyLong());
         verify(scoringTx).finishSession(eq(SESSION_ID), eq(ATTEMPT), eq(70), any());
+    }
+
+    @Test
+    @DisplayName("미리 채점 중인 카드는 다시 채점하지 않고 기다렸다가 완료 결과로 총점을 낸다")
+    void waitForInProgressCard() {
+        given(scoringTx.loadPlan(SESSION_ID)).willReturn(qaPlan());
+        given(scoringTx.loadCards(SESSION_ID)).willReturn(
+                List.of(qaCard(FeedbackStatus.SCORING, true, null)),
+                List.of(qaCard(FeedbackStatus.COMPLETED, false, 90)));
+        givenSummaryAndSave(true);
+
+        service.score(SESSION_ID, ATTEMPT);
+
+        verify(scoringTx, times(2)).loadCards(SESSION_ID);
+        verify(cardScoringService, never()).scoreTopic(anyLong());
+        verify(scoringTx).finishSession(eq(SESSION_ID), eq(ATTEMPT), eq(90), any());
+    }
+
+    @Test
+    @DisplayName("대기 시간 초과로 실패한 세션은 남은 카드가 모두 끝나면 새 시도로 마무리된다")
+    void resumeAfterTimeout() {
+        given(scoringTx.reopenIfAllCardsDone(SESSION_ID)).willReturn(Optional.of(ATTEMPT));
+        given(scoringTx.loadPlan(SESSION_ID)).willReturn(qaPlan());
+        given(scoringTx.loadCards(SESSION_ID)).willReturn(List.of(qaCard(FeedbackStatus.COMPLETED, false, 85)));
+        givenSummaryAndSave(true);
+
+        service.resumeIfReady(SESSION_ID);
+
+        verify(cardScoringService, never()).scoreTopic(anyLong());
+        verify(scoringTx).finishSession(eq(SESSION_ID), eq(ATTEMPT), eq(85), any());
+    }
+
+    @Test
+    @DisplayName("아직 남은 카드가 있거나 실패한 세션이 아니면 재개하지 않는다")
+    void noResumeWhenNotReady() {
+        given(scoringTx.reopenIfAllCardsDone(SESSION_ID)).willReturn(Optional.empty());
+
+        service.resumeIfReady(SESSION_ID);
+
+        verify(scoringTx, never()).loadPlan(anyLong());
     }
 }

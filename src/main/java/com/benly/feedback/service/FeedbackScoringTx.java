@@ -8,6 +8,7 @@ import com.benly.feedback.dto.ScoringResult.PresentationInput;
 import com.benly.feedback.dto.ScoringResult.SessionSummary;
 import com.benly.feedback.dto.ScoringResult.TailInput;
 import com.benly.feedback.entity.AxisSet;
+import com.benly.feedback.entity.Feedback;
 import com.benly.feedback.entity.SessionFeedback;
 import com.benly.feedback.entity.SessionFormat;
 import com.benly.feedback.exception.FeedbackErrorCode;
@@ -115,6 +116,34 @@ public class FeedbackScoringTx {
     @Transactional
     public void markFailed(Long sessionId, LocalDateTime attempt) {
         sessionFeedbackRepository.failAttempt(sessionId, attempt);
+    }
+
+    /**
+     * 최종 채점이 대기 시간 초과로 실패한 뒤, 남은 카드가 늦게 끝났을 때 쓴다.
+     * 세션 채점이 FAILED이고 모든 카드가 COMPLETED면 새 시도를 열고 시도 번호를 돌려준다.
+     * 세션 행을 잠그고 판단하므로 카드 여러 장이 동시에 끝나도 한 곳만 연다.
+     */
+    @Transactional
+    public Optional<LocalDateTime> reopenIfAllCardsDone(Long sessionId) {
+        Optional<SessionFeedback> found = sessionFeedbackRepository.findBySessionIdForUpdate(sessionId);
+        if (found.isEmpty() || !found.get().isFailed()) {
+            return Optional.empty();
+        }
+
+        long totalCards = questionReadRepository.findBySession_IdOrderBySeqAsc(sessionId).stream()
+                .filter(Question::isMain)
+                .count()
+                + (formatResolver.resolve(sessionId) == SessionFormat.PT ? 1 : 0);
+        long completedCards = feedbackRepository.findWithQuestionBySessionId(sessionId).stream()
+                .filter(Feedback::isCompleted)
+                .count();
+        if (completedCards < totalCards) {
+            return Optional.empty();
+        }
+
+        SessionFeedback sf = found.get();
+        sf.resetForRescore();
+        return Optional.of(sf.getScoringStartedAt());
     }
 
     private PresentationInput loadPresentation(Long sessionId) {
