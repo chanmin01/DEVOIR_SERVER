@@ -5,6 +5,7 @@ import com.benly.feedback.dto.FeedbackStatusResponse;
 import com.benly.feedback.entity.*;
 import com.benly.feedback.exception.FeedbackErrorCode;
 import com.benly.feedback.repository.*;
+import com.benly.global.common.KstTime;
 import com.benly.global.exception.BusinessException;
 import com.benly.global.recovery.StaleTaskPolicy;
 import com.benly.pt.dto.PtTaskContent;
@@ -84,7 +85,7 @@ public class FeedbackQueryService {
                         session.getStage(),
                         session.getCompanyName(),
                         session.getJobTitle(),
-                        session.getCreatedAt().toString()
+                        KstTime.format(session.getCreatedAt())
                 ),
                 new KeyCoaching(sf.getKeyCoaching(), sf.getCoachingAction()),
                 sf.getTotalScore(),

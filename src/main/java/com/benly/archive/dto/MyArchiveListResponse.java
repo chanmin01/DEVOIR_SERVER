@@ -4,7 +4,7 @@ import com.benly.archive.entity.ArchiveQuestion;
 import com.benly.archive.entity.ArchiveStatus;
 import com.benly.archive.entity.InterviewArchive;
 import com.benly.archive.entity.InterviewFormat;
-import com.benly.archive.support.ArchiveTime;
+import com.benly.global.common.KstTime;
 import com.benly.session.entity.InterviewStage;
 
 import java.util.List;
@@ -34,7 +34,7 @@ public record MyArchiveListResponse(
                     a.getStage(),
                     a.getFormat(),
                     a.getInterviewedMonth().toString(),
-                    ArchiveTime.toKst(a.getCreatedAt()),
+                    KstTime.format(a.getCreatedAt()),
                     a.getStatus(),
                     questions.stream().map(q -> Question.of(q, likedIds.contains(q.getId()))).toList()
             );
