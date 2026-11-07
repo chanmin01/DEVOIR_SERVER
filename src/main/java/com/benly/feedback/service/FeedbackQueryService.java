@@ -60,9 +60,9 @@ public class FeedbackQueryService {
     }
 
     /**
-     * 채점 중에도 조회할 수 있다. 끝난 카드는 피드백까지, 아직인 카드는 질문과 답변만 내려간다.
+     * 채점 중이거나 채점이 실패한 뒤에도 조회할 수 있다. 끝난 카드는 피드백까지, 아직인 카드는 질문과 답변만 내려간다.
      * 총점, 총평, 핵심 코칭, 레이더, 점수 구성은 세션 채점이 끝난 뒤에만 채운다.
-     * 채점이 실패했거나 오래 멈췄으면 404.
+     * 채점 요청 전이면 404.
      */
     public FeedbackReportResponse getReport(Long userId, Long sessionId) {
         Session session = validateOwnerShip(userId, sessionId);
@@ -71,10 +71,7 @@ public class FeedbackQueryService {
                 .orElseThrow(() -> new BusinessException(FeedbackErrorCode.REPORT_NOT_FOUND));
 
         boolean completed = sf.isCompleted();
-        boolean scoring = sf.isScoring() && !sf.isStale(staleTaskPolicy.scoringThreshold());
-        if (!completed && !scoring) {
-            throw new BusinessException(FeedbackErrorCode.REPORT_NOT_FOUND);
-        }
+        boolean failed = sf.isFailed() || sf.isStale(staleTaskPolicy.scoringThreshold());
 
         SessionFormat format = formatResolver.resolve(sessionId);
         List<Feedback> feedbacks = feedbackRepository.findWithQuestionBySessionId(sessionId);
@@ -94,8 +91,9 @@ public class FeedbackQueryService {
         );
 
         if (!completed) {
+            FeedbackStatus status = failed ? FeedbackStatus.FAILED : FeedbackStatus.SCORING;
             return new FeedbackReportResponse(
-                    sessionId, FeedbackStatus.SCORING.name(), meta,
+                    sessionId, status.name(), meta,
                     null, null, null, null, null, cards);
         }
 
