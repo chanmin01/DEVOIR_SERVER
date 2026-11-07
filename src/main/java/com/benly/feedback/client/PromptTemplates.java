@@ -19,9 +19,13 @@ public class PromptTemplates {
     public static final String SCORING_MAIN_USER = "scoring-main-user";
     public static final String SCORING_SUMMARY_SYSTEM = "scoring-summary-system";
     public static final String SCORING_SUMMARY_USER = "scoring-summary-user";
+    public static final String SCORING_PRESENTATION_SYSTEM = "scoring-presentation-system";
+    public static final String SCORING_PRESENTATION_USER = "scoring-presentation-user";
 
     private static final List<String> REQUIRED = List.of(
-            SCORING_MAIN_SYSTEM, SCORING_MAIN_USER, SCORING_SUMMARY_SYSTEM, SCORING_SUMMARY_USER);
+            SCORING_MAIN_SYSTEM, SCORING_MAIN_USER, SCORING_SUMMARY_SYSTEM, SCORING_SUMMARY_USER,
+            SCORING_PRESENTATION_SYSTEM, SCORING_PRESENTATION_USER);
+
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{\\{(\\w+)}}");
 
     private final Map<String, String> templates = new HashMap<>();

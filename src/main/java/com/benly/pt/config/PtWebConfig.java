@@ -19,7 +19,10 @@ public class PtWebConfig implements WebMvcConfigurer {
                         "/api/v1/questions/*/skip"
                 )
                 .excludePathPatterns(
-                        "/api/v1/sessions/*/cancel"
+                        "/api/v1/sessions/*/cancel",
+                        // 채점 API는 QA와 PT가 같이 쓴다
+                        "/api/v1/sessions/*/feedback",
+                        "/api/v1/sessions/*/feedback/status"
                 );
     }
 }

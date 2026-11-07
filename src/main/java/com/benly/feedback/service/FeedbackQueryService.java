@@ -7,6 +7,9 @@ import com.benly.feedback.exception.FeedbackErrorCode;
 import com.benly.feedback.repository.*;
 import com.benly.global.exception.BusinessException;
 import com.benly.global.recovery.StaleTaskPolicy;
+import com.benly.pt.dto.PtTaskContent;
+import com.benly.pt.repository.PtSessionRepository;
+import com.benly.pt.service.PtContentCodec;
 import com.benly.question.entity.Answer;
 import com.benly.question.entity.Question;
 import com.benly.session.entity.Session;
@@ -32,6 +35,8 @@ public class FeedbackQueryService {
     private final FeedbackReportAssembler assembler;
     private final StaleTaskPolicy staleTaskPolicy;
     private final SessionFormatResolver formatResolver;
+    private final PtSessionRepository ptSessionRepository;
+    private final PtContentCodec ptContentCodec;
 
     public FeedbackStatusResponse getStatus(Long userId, Long sessionId) {
         validateOwnerShip(userId, sessionId);
@@ -68,7 +73,8 @@ public class FeedbackQueryService {
                 : AxisSet.resolve(session.getStage(), session.getCompanyType());
         Radar radar = assembler.assembleRadar(radarSet, scoreAxes,
                 ptWithPresentation ? CardType.PRESENTATION : null);
-        List<Card> cards = assembler.assembleCards(feedbacks, allQuestions, allAnswers);
+        List<Card> cards = assembler.assembleCards(feedbacks, allQuestions, allAnswers,
+                format == SessionFormat.PT ? presentationMetaOf(sessionId) : null);
 
         return new FeedbackReportResponse(
                 sessionId,
@@ -87,6 +93,19 @@ public class FeedbackQueryService {
                 radar,
                 cards
         );
+    }
+
+    private FeedbackReportAssembler.PresentationMeta presentationMetaOf(Long sessionId) {
+        return ptSessionRepository.findById(sessionId)
+                .map(pt -> {
+                    PtTaskContent task = ptContentCodec.content(pt.getTask().getContentJson());
+                    return new FeedbackReportAssembler.PresentationMeta(
+                            task.title(),
+                            pt.getPresentationTranscript(),
+                            pt.getPresentationDurationSec(),
+                            pt.getTrack() == null ? null : pt.getTrack().name());
+                })
+                .orElse(null);
     }
 
     private ScoreBreakdown breakdownOf(Feedback presentation, List<Feedback> feedbacks) {

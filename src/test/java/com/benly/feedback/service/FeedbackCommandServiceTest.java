@@ -1,11 +1,13 @@
 package com.benly.feedback.service;
 
 import com.benly.feedback.client.FeedbackScoringClient;
+import com.benly.feedback.dto.ScoredPresentation;
+import com.benly.feedback.dto.ScoredTopic;
 import com.benly.feedback.dto.ScoringContext;
 import com.benly.feedback.dto.ScoringPlan;
-import com.benly.feedback.dto.ScoredTopic;
 import com.benly.feedback.dto.ScoringResult.MainQuestionInput;
 import com.benly.feedback.dto.ScoringResult.MainQuestionScore;
+import com.benly.feedback.dto.ScoringResult.PresentationInput;
 import com.benly.feedback.dto.ScoringResult.SessionSummary;
 import com.benly.feedback.entity.Axis;
 import com.benly.feedback.entity.AxisSet;
@@ -59,14 +61,18 @@ class FeedbackCommandServiceTest {
         return new MainQuestionScore("제목", m, null);
     }
 
+    private void givenSummary() {
+        given(scoringClient.summarize(any(), anyInt(), anyList(), any(), anyInt()))
+                .willReturn(new SessionSummary("총평", "약점", "행동"));
+    }
+
     private void answeredPlan() {
         MainQuestionInput answered = new MainQuestionInput(1, "메인", "답변", List.of());
         ScoringPlan plan = planWith(answered);
         given(scoringTx.loadPlan(SESSION_ID)).willReturn(plan);
         given(scoringClient.scoreMainQuestion(any(), any(), any()))
                 .willReturn(allHundred(plan.axes()));
-        given(scoringClient.summarize(any(), anyInt(), anyList(), anyInt()))
-                .willReturn(new SessionSummary("총평", "약점", "행동"));
+        givenSummary();
     }
 
     @Test
@@ -74,7 +80,7 @@ class FeedbackCommandServiceTest {
     void scoreAnsweredTopic() {
         // given
         answeredPlan();
-        given(scoringTx.saveResults(eq(SESSION_ID), eq(ATTEMPT), anyInt(), anyList(), any()))
+        given(scoringTx.saveResults(eq(SESSION_ID), eq(ATTEMPT), anyInt(), anyList(), any(), any()))
                 .willReturn(true);
 
         // when
@@ -84,7 +90,7 @@ class FeedbackCommandServiceTest {
         verify(scoringClient, times(1)).scoreMainQuestion(any(), any(), any());
 
         ArgumentCaptor<List<ScoredTopic>> captor = ArgumentCaptor.forClass(List.class);
-        verify(scoringTx).saveResults(eq(SESSION_ID), eq(ATTEMPT), eq(100), captor.capture(), any());
+        verify(scoringTx).saveResults(eq(SESSION_ID), eq(ATTEMPT), eq(100), captor.capture(), isNull(), any());
         assertThat(captor.getValue()).hasSize(1);
         assertThat(captor.getValue().get(0).topicScore()).isEqualTo(100);
         verify(scoringTx, never()).markFailed(anyLong(), any());
@@ -96,9 +102,8 @@ class FeedbackCommandServiceTest {
         // given
         MainQuestionInput skipped = new MainQuestionInput(1, "메인질문", null, List.of());
         given(scoringTx.loadPlan(SESSION_ID)).willReturn(planWith(skipped));
-        given(scoringClient.summarize(any(), anyInt(), anyList(), anyInt()))
-                .willReturn(new SessionSummary("총평", "약점", "행동"));
-        given(scoringTx.saveResults(eq(SESSION_ID), eq(ATTEMPT), anyInt(), anyList(), any()))
+        givenSummary();
+        given(scoringTx.saveResults(eq(SESSION_ID), eq(ATTEMPT), anyInt(), anyList(), any(), any()))
                 .willReturn(true);
 
         // when
@@ -106,7 +111,7 @@ class FeedbackCommandServiceTest {
 
         // then
         verify(scoringClient, never()).scoreMainQuestion(any(), any(), any());
-        verify(scoringTx).saveResults(eq(SESSION_ID), eq(ATTEMPT), eq(0), anyList(), any());
+        verify(scoringTx).saveResults(eq(SESSION_ID), eq(ATTEMPT), eq(0), anyList(), any(), any());
     }
 
     @Test
@@ -123,7 +128,7 @@ class FeedbackCommandServiceTest {
 
         // then
         verify(scoringTx).markFailed(SESSION_ID, ATTEMPT);
-        verify(scoringTx, never()).saveResults(anyLong(), any(), anyInt(), anyList(), any());
+        verify(scoringTx, never()).saveResults(anyLong(), any(), anyInt(), anyList(), any(), any());
     }
 
     @Test
@@ -131,14 +136,51 @@ class FeedbackCommandServiceTest {
     void discardWhenAttemptReplaced() {
         // given
         answeredPlan();
-        given(scoringTx.saveResults(eq(SESSION_ID), eq(ATTEMPT), anyInt(), anyList(), any()))
+        given(scoringTx.saveResults(eq(SESSION_ID), eq(ATTEMPT), anyInt(), anyList(), any(), any()))
                 .willReturn(false);
 
         // when
         service.score(SESSION_ID, ATTEMPT);
 
         // then
-        verify(scoringTx).saveResults(eq(SESSION_ID), eq(ATTEMPT), anyInt(), anyList(), any());
         verify(scoringTx, never()).markFailed(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("PT에서 발표가 기록되지 않으면 AI를 부르지 않고 발표 0점, 질의응답 70% 비율로 총점을 낸다")
+    void ptMissingPresentation() {
+        // given
+        AxisSet axisSet = AxisSet.PERSONALITY;
+        ScoringContext ctx = new ScoringContext("FINANCE_IT", "PT", "백엔드");
+        PresentationInput noPresentation = new PresentationInput(
+                "과제", "서비스 설명", List.of(), "문제", List.of(), List.of(), List.of(),
+                "AI", "AI", "가이드",
+                List.of("요구1", "요구2"), null, null);
+        ScoringPlan plan = new ScoringPlan(
+                axisSet.axes(), ctx, axisSet,
+                List.of(new ScoringPlan.MainInput(100L,
+                        new MainQuestionInput(1, "메인", "답변", List.of()))),
+                SessionFormat.PT,
+                noPresentation);
+
+        given(scoringTx.loadPlan(SESSION_ID)).willReturn(plan);
+        given(scoringClient.scoreMainQuestion(any(), any(), any()))
+                .willReturn(allHundred(plan.axes()));
+        givenSummary();
+        given(scoringTx.saveResults(eq(SESSION_ID), eq(ATTEMPT), anyInt(), anyList(), any(), any()))
+                .willReturn(true);
+
+        // when
+        service.score(SESSION_ID, ATTEMPT);
+
+        // then
+        verify(scoringClient, never()).scorePresentation(any(), any(), any());
+
+        ArgumentCaptor<ScoredPresentation> captor = ArgumentCaptor.forClass(ScoredPresentation.class);
+        verify(scoringTx).saveResults(eq(SESSION_ID), eq(ATTEMPT), eq(70), anyList(), captor.capture(), any());
+        assertThat(captor.getValue().topicScore()).isZero();
+        assertThat(captor.getValue().score().content().requirements())
+                .extracting("status")
+                .containsOnly("MISSING");
     }
 }

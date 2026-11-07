@@ -83,4 +83,43 @@ public class ScoringResult {
             String answer
     ) {
     }
+
+    /** PT 발표 채점 입력. 지원자가 본 과제 내용 전체와 발표 원문 */
+    public record PresentationInput(
+            String taskTitle,
+            String serviceDescription,
+            List<String> currentFlow,
+            String problemSituation,
+            List<String> availableData,
+            List<String> constraints,
+            List<String> exerciseAssumptions,
+            String track,
+            String trackLabel,
+            String trackGuidance,
+            List<String> requirements,
+            Integer durationSec,
+            String transcript
+    ) {
+        public boolean isMissing() {
+            return transcript == null || transcript.isBlank();
+        }
+    }
+
+    public record PresentationScore(
+            Map<String, Integer> axisScores,
+            FeedbackContent content
+    ) {
+        /** 발표가 기록되지 않은 경우. AI를 부르지 않고 0점, 요구사항은 전부 MISSING */
+        public static PresentationScore missing(List<Axis> axes, List<String> requirements) {
+            Map<String, Integer> zeros = new HashMap<>();
+            axes.forEach(a -> zeros.put(a.code(), 0));
+
+            List<FeedbackContent.RequirementContent> reqs = requirements.stream()
+                    .map(r -> new FeedbackContent.RequirementContent(r, "MISSING", null))
+                    .toList();
+
+            return new PresentationScore(zeros,
+                    FeedbackContent.presentation(null, null, null, null, reqs, null));
+        }
+    }
 }
