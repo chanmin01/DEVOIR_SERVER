@@ -11,8 +11,23 @@ public record FeedbackContent(
         String next,
         String weakAxis,
         ImprovedAnswer improvedAnswer,
-        List<TailContent> tails
+        List<TailContent> tails,
+        List<RequirementContent> requirements,   // 발표 카드만
+        OutlineContent improvedOutline           // 발표 카드만
 ) {
+    /** 질문 카드용. 기존 코드가 쓰던 생성자 */
+    public FeedbackContent(String good, String weak, String next, String weakAxis,
+                           ImprovedAnswer improvedAnswer, List<TailContent> tails) {
+        this(good, weak, next, weakAxis, improvedAnswer, tails, null, null);
+    }
+
+    /** 발표 카드용 */
+    public static FeedbackContent presentation(String good, String weak, String next, String weakAxis,
+                                               List<RequirementContent> requirements,
+                                               OutlineContent improvedOutline) {
+        return new FeedbackContent(good, weak, next, weakAxis, null, List.of(), requirements, improvedOutline);
+    }
+
     public record ImprovedAnswer(
             String before,
             String after
@@ -30,6 +45,22 @@ public record FeedbackContent(
             String next,
             String weakAxis,
             String improvedAfter
+    ) {
+    }
+
+    /** status: COVERED, PARTIAL, MISSING */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record RequirementContent(
+            String requirement,
+            String status,
+            String evidence
+    ) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record OutlineContent(
+            List<String> before,
+            List<String> after
     ) {
     }
 }

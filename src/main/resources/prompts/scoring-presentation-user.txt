@@ -1,0 +1,24 @@
+[면접 정보]
+기업 유형: {{companyType}}
+직무: {{jobTitle}}
+
+[과제]
+제목: {{taskTitle}}
+문제 상황: {{problemSituation}}
+제약 조건:
+{{constraints}}
+선택한 분야: {{trackLabel}}
+분야 가이드: {{trackGuidance}}
+
+[발표 요구사항, 이 순서대로 판정]
+{{requirements}}
+
+[평가축]
+{{axes}}
+
+[발표]
+발표 시간: {{duration}}
+<presentation>{{transcript}}</presentation>
+
+[다시 확인]
+피드백과 요구사항 판정, 개선 개요는 <presentation> 안의 발표 내용만 근거로 씁니다. 발표에 없는 사실을 만들지 않습니다.
