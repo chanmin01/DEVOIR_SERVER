@@ -31,6 +31,7 @@ public class FeedbackQueryService {
     private final AnswerReadRepository answerReadRepository;
     private final FeedbackReportAssembler assembler;
     private final StaleTaskPolicy staleTaskPolicy;
+    private final SessionFormatResolver formatResolver;
 
     public FeedbackStatusResponse getStatus(Long userId, Long sessionId) {
         validateOwnerShip(userId, sessionId);
@@ -53,18 +54,26 @@ public class FeedbackQueryService {
             throw new BusinessException(FeedbackErrorCode.REPORT_NOT_FOUND);
         }
 
+        SessionFormat format = formatResolver.resolve(sessionId);
         List<Feedback> feedbacks = feedbackRepository.findWithQuestionBySessionId(sessionId);
         List<ScoreAxis> scoreAxes = scoreAxisRepository.findBySessionId(sessionId);
         List<Question> allQuestions = questionReadRepository.findBySession_IdOrderBySeqAsc(sessionId);
         List<Answer> allAnswers = answerReadRepository.findBySessionId(sessionId);
 
-        AxisSet axisSet = AxisSet.resolve(session.getStage(), session.getCompanyType());
-        Radar radar = assembler.assembleRadar(axisSet, scoreAxes);
+        Feedback presentation = feedbacks.stream().filter(Feedback::isPresentation).findFirst().orElse(null);
+        boolean ptWithPresentation = format == SessionFormat.PT && presentation != null;
+
+        AxisSet radarSet = ptWithPresentation
+                ? AxisSet.PT
+                : AxisSet.resolve(session.getStage(), session.getCompanyType());
+        Radar radar = assembler.assembleRadar(radarSet, scoreAxes,
+                ptWithPresentation ? CardType.PRESENTATION : null);
         List<Card> cards = assembler.assembleCards(feedbacks, allQuestions, allAnswers);
 
         return new FeedbackReportResponse(
                 sessionId,
                 new Meta(
+                        format.name(),
                         session.getCompanyType(),
                         session.getStage(),
                         session.getCompanyName(),
@@ -73,13 +82,24 @@ public class FeedbackQueryService {
                 ),
                 new KeyCoaching(sf.getKeyCoaching(), sf.getCoachingAction()),
                 sf.getTotalScore(),
+                ptWithPresentation ? breakdownOf(presentation, feedbacks) : null,
                 sf.getSummary(),
                 radar,
-                cards,
-                null
+                cards
         );
     }
 
+    private ScoreBreakdown breakdownOf(Feedback presentation, List<Feedback> feedbacks) {
+        List<Integer> qaScores = feedbacks.stream()
+                .filter(f -> !f.isPresentation())
+                .map(f -> f.getTopicScore() == null ? 0 : f.getTopicScore())
+                .toList();
+        int presentationScore = presentation.getTopicScore() == null ? 0 : presentation.getTopicScore();
+
+        TotalScoreCalculator.Breakdown b = TotalScoreCalculator
+                .calculate(SessionFormat.PT, presentationScore, qaScores).breakdown();
+        return new ScoreBreakdown(b.presentation(), b.qaAverage(), b.presentationWeight(), b.qaWeight());
+    }
 
     private Session validateOwnerShip(Long userId, Long sessionId) {
         Session session = sessionReadRepository.findById(sessionId)

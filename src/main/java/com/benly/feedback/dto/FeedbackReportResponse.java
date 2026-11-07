@@ -10,13 +10,14 @@ public record FeedbackReportResponse(
         Meta meta,
         KeyCoaching keyCoaching,
         Integer totalScore,
+        ScoreBreakdown scoreBreakdown,
         String verdict,
         Radar radar,
-        List<Card> cards,
-        Delivery delivery
+        List<Card> cards
 ) {
 
     public record Meta(
+            String format,
             String companyType,
             String stage,
             String companyName,
@@ -27,6 +28,14 @@ public record FeedbackReportResponse(
     public record KeyCoaching(
             String weakness,
             String action
+    ) {}
+
+    // PT만. QA는 null
+    public record ScoreBreakdown(
+            int presentation,
+            int qaAverage,
+            int presentationWeight,
+            int qaWeight
     ) {}
 
     public record Radar(
@@ -41,38 +50,41 @@ public record FeedbackReportResponse(
     }
 
     public record Card(
+            String cardType,
             Long questionId,
             Integer num,
             String shortTitle,
             Integer topicScore,
             String question,
             String answer,
-            String good,
-            String weak,
-            String next,
-            String weakAxis,               // 설명 문장
-            ImprovedAnswer improvedAnswer, // 메인: before + after
-            List<Tail> tails
-    ) {}
-
-    // 꼬리 = 메인과 동일 피드백 (점수·shortTitle 없음, strategy 추가, before 없음)
-    public record Tail(
-            String strategy,
-            String question,
-            String answer,
+            boolean skipped,
+            Integer durationSeconds,          // PT 발표 카드만
+            String track,                     // PT 발표 카드만
+            List<Requirement> requirements,   // PT 발표 카드만, 그 외 빈 배열
             String good,
             String weak,
             String next,
             String weakAxis,
-            String improvedAfter           // 꼬리는 after만
+            ImprovedAnswer improvedAnswer,    // 질문 카드만
+            ImprovedOutline improvedOutline,  // PT 발표 카드만
+            List<Tail> tails
+    ) {}
+
+    public record Tail(
+            String strategy,
+            String question,
+            String answer,
+            boolean skipped,
+            String good,
+            String weak,
+            String next,
+            String weakAxis,
+            String improvedAfter
     ) {}
 
     public record ImprovedAnswer(String before, String after) {}
 
-    public record Delivery(
-            String speechSpeed,
-            String speechSpeedNote,
-            Integer fillerWordCount,
-            String fillerWordNote
-    ) {}
+    public record ImprovedOutline(List<String> before, List<String> after) {}
+
+    public record Requirement(String requirement, String status, String evidence) {}
 }

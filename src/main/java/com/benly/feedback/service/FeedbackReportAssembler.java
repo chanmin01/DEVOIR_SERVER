@@ -3,9 +3,11 @@ package com.benly.feedback.service;
 import com.benly.feedback.dto.FeedbackContent;
 import com.benly.feedback.entity.Axis;
 import com.benly.feedback.entity.AxisSet;
+import com.benly.feedback.entity.CardType;
 import com.benly.feedback.entity.Feedback;
 import com.benly.feedback.entity.ScoreAxis;
 import com.benly.question.entity.Answer;
+import com.benly.question.entity.AnswerType;
 import com.benly.question.entity.Question;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -22,11 +24,15 @@ public class FeedbackReportAssembler {
     private final FeedbackContentParser contentParser;
 
     /**
-     * radar 조립: ScoreAxis 30개를 축별 평균내여 AxisSet 순서로 정렬.
+     * radar 조립: 대상 카드의 ScoreAxis를 축별로 평균내 AxisSet 순서로 정렬.
+     * onlyCardType이 있으면 그 카드 종류의 축만 쓴다. PT는 PRESENTATION만.
      */
-    public Radar assembleRadar(AxisSet axisSet, List<ScoreAxis> scoreAxes) {
+    public Radar assembleRadar(AxisSet axisSet, List<ScoreAxis> scoreAxes, CardType onlyCardType) {
         Map<String, List<Integer>> byAxis = new HashMap<>();
         for (ScoreAxis sa : scoreAxes) {
+            if (onlyCardType != null && sa.getFeedback().getCardType() != onlyCardType) {
+                continue;
+            }
             byAxis.computeIfAbsent(sa.getAxis(), k -> new ArrayList<>()).add(sa.getScore());
         }
         List<Radar.Axis> axes = new ArrayList<>();
@@ -39,49 +45,88 @@ public class FeedbackReportAssembler {
         return new Radar(axisSet.name(), axes);
     }
 
+    public Radar assembleRadar(AxisSet axisSet, List<ScoreAxis> scoreAxes) {
+        return assembleRadar(axisSet, scoreAxes, null);
+    }
+
     /**
-     * cards 조립: 메인 Feedback 5개 → Card. 각 카드에 꼬리(tails) 묶기.
+     * cards 조립: 발표 카드가 있으면 맨 앞, 이어서 질문 카드와 그 꼬리들.
      */
     public List<Card> assembleCards(
-            List<Feedback> feedbacks,          // 메인 5개 (question fetch join됨)
-            List<Question> allQuestions,       // 세션 전체 질문 (메인+꼬리)
-            List<Answer> allAnswers) {         // 세션 전체 답변
+            List<Feedback> feedbacks,
+            List<Question> allQuestions,
+            List<Answer> allAnswers) {
 
-        // questionId → Answer 맵
         Map<Long, Answer> answerByQuestion = allAnswers.stream()
                 .collect(Collectors.toMap(a -> a.getQuestion().getId(), a -> a));
 
-        // parentId → 꼬리 질문들 맵 (부모별 꼬리 묶기, seq 순)
         Map<Long, List<Question>> tailsByParent = allQuestions.stream()
                 .filter(q -> q.getParent() != null)
                 .collect(Collectors.groupingBy(q -> q.getParent().getId()));
 
         List<Card> cards = new ArrayList<>();
         for (Feedback fb : feedbacks) {
-            Question main = fb.getQuestion();
             FeedbackContent content = contentParser.parse(fb.getContent());
-
-            cards.add(new Card(
-                    main.getId(),
-                    main.getSeq(),
-                    main.getShortTitle(),
-                    fb.getTopicScore(),
-                    main.getContent(),
-                    transcriptOf(answerByQuestion.get(main.getId())),
-                    content != null ? content.good() : null,
-                    content != null ? content.weak() : null,
-                    content != null ? content.next() : null,
-                    content != null ? content.weakAxis() : null,
-                    improvedAnswerOf(content),
-                    assembleTails(main.getId(), tailsByParent, answerByQuestion, content)
-            ));
+            cards.add(fb.isPresentation()
+                    ? presentationCard(fb, content)
+                    : questionCard(fb, content, tailsByParent, answerByQuestion));
         }
         return cards;
     }
 
-    /**
-     * 한 메인의 꼬리들을 조립
-     */
+    private Card questionCard(Feedback fb, FeedbackContent content,
+                              Map<Long, List<Question>> tailsByParent,
+                              Map<Long, Answer> answerByQuestion) {
+        Question main = fb.getQuestion();
+        Answer answer = answerByQuestion.get(main.getId());
+        boolean skipped = isSkipped(answer);
+
+        return new Card(
+                CardType.QA.name(),
+                main.getId(),
+                main.getSeq(),
+                main.getShortTitle(),
+                fb.getTopicScore(),
+                main.getContent(),
+                skipped ? null : transcriptOf(answer),
+                skipped,
+                null,
+                null,
+                List.of(),
+                content != null ? content.good() : null,
+                content != null ? content.weak() : null,
+                content != null ? content.next() : null,
+                content != null ? content.weakAxis() : null,
+                improvedAnswerOf(content),
+                null,
+                assembleTails(main.getId(), tailsByParent, answerByQuestion, content)
+        );
+    }
+
+    // 발표 카드 세부 항목은 PT 채점 이슈에서 채운다
+    private Card presentationCard(Feedback fb, FeedbackContent content) {
+        return new Card(
+                CardType.PRESENTATION.name(),
+                null,
+                0,
+                null,
+                fb.getTopicScore(),
+                null,
+                null,
+                false,
+                null,
+                null,
+                List.of(),
+                content != null ? content.good() : null,
+                content != null ? content.weak() : null,
+                content != null ? content.next() : null,
+                content != null ? content.weakAxis() : null,
+                null,
+                null,
+                List.of()
+        );
+    }
+
     private List<Tail> assembleTails(
             Long mainId,
             Map<Long, List<Question>> tailsByParent,
@@ -97,12 +142,16 @@ public class FeedbackReportAssembler {
         List<Tail> tails = new ArrayList<>();
         for (int i = 0; i < tailQuestions.size(); i++) {
             Question tq = tailQuestions.get(i);
-            FeedbackContent.TailContent tc = (i < tailContents.size()) ? tailContents.get(i) : null;
+            Answer answer = answerByQuestion.get(tq.getId());
+            boolean skipped = isSkipped(answer);
+            FeedbackContent.TailContent tc =
+                    (!skipped && i < tailContents.size()) ? tailContents.get(i) : null;
 
             tails.add(new Tail(
                     tq.getStrategy() == null ? null : tq.getStrategy().name(),
                     tq.getContent(),
-                    transcriptOf(answerByQuestion.get(tq.getId())),
+                    skipped ? null : transcriptOf(answer),
+                    skipped,
                     tc != null ? tc.good() : null,
                     tc != null ? tc.weak() : null,
                     tc != null ? tc.next() : null,
@@ -111,6 +160,10 @@ public class FeedbackReportAssembler {
             ));
         }
         return tails;
+    }
+
+    private boolean isSkipped(Answer answer) {
+        return answer != null && answer.getInputType() == AnswerType.SKIP;
     }
 
     private String transcriptOf(Answer answer) {

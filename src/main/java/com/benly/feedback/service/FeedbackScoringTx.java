@@ -10,6 +10,7 @@ import com.benly.feedback.entity.AxisSet;
 import com.benly.feedback.entity.Feedback;
 import com.benly.feedback.entity.ScoreAxis;
 import com.benly.feedback.entity.SessionFeedback;
+import com.benly.feedback.entity.SessionFormat;
 import com.benly.feedback.exception.FeedbackErrorCode;
 import com.benly.feedback.repository.*;
 import com.benly.global.exception.BusinessException;
@@ -35,12 +36,14 @@ public class FeedbackScoringTx {
     private final QuestionReadRepository questionReadRepository;
     private final AnswerReadRepository answerReadRepository;
     private final FeedbackContentParser contentParser;
+    private final SessionFormatResolver formatResolver;
 
     @Transactional(readOnly = true)
     public ScoringPlan loadPlan(Long sessionId) {
         Session session = sessionReadRepository.findById(sessionId)
                 .orElseThrow(() -> new BusinessException(FeedbackErrorCode.SESSION_NOT_FOUND));
 
+        SessionFormat format = formatResolver.resolve(sessionId);
         AxisSet axisSet = AxisSet.resolve(session.getStage(), session.getCompanyType());
         ScoringContext ctx = ScoringContext.from(session);
 
@@ -63,7 +66,7 @@ public class FeedbackScoringTx {
                 .map(m -> new ScoringPlan.MainInput(m.getId(), toInput(m, tailsByParent, transcripts)))
                 .toList();
 
-        return new ScoringPlan(axisSet.axes(), ctx, axisSet, mains);
+        return new ScoringPlan(axisSet.axes(), ctx, axisSet, mains, format);
     }
 
     private MainQuestionInput toInput(Question main,
@@ -115,10 +118,9 @@ public class FeedbackScoringTx {
         main.assignShortTitle(topic.score().shortTitle());
 
         Feedback feedback = feedbackRepository.save(
-                Feedback.create(main, contentParser.toJson(topic.score().content()), topic.topicScore()));
+                Feedback.qa(main, contentParser.toJson(topic.score().content()), topic.topicScore()));
 
         topic.score().axisScores()
                 .forEach((code, value) -> scoreAxisRepository.save(ScoreAxis.create(feedback, code, value)));
     }
-
 }
