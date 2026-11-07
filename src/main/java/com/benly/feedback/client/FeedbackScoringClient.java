@@ -13,6 +13,7 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -28,8 +29,13 @@ import java.util.stream.Collectors;
 @Component
 public class FeedbackScoringClient {
 
+    private static final int MAIN_MAX_TOKENS = 6000;
+    private static final int SUMMARY_MAX_TOKENS = 1500;
+    private static final int MAIN_MAX_ATTEMPTS = 2;
+
     private final RestClient restClient;
     private final PromptTemplates prompts;
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final String apiKey;
     private final String apiUrl;
     private final String model;
@@ -54,7 +60,50 @@ public class FeedbackScoringClient {
     public MainQuestionScore scoreMainQuestion(List<Axis> axes, ScoringContext context, MainQuestionInput input) {
         String system = prompts.get(PromptTemplates.SCORING_MAIN_SYSTEM);
         String user = buildMainUser(axes, context, input);
+        Map<String, Object> inputSchema = mainSchema(axes, input.tails().size());
 
+        IllegalStateException lastError = null;
+        for (int attempt = 1; attempt <= MAIN_MAX_ATTEMPTS; attempt++) {
+            JsonNode toolInput = callTool(system, user, "score_answer",
+                    "면접 답변을 채점하여 축별 점수와 피드백을 반환합니다.", inputSchema, MAIN_MAX_TOKENS);
+            try {
+                return parseMainScore(axes, input.tails().size(), input.answer(), toolInput);
+            } catch (IllegalStateException e) {
+                lastError = e;
+                log.warn("채점 응답 형식 오류 attempt={}/{} reason={}", attempt, MAIN_MAX_ATTEMPTS, e.getMessage());
+            }
+        }
+        throw lastError;
+    }
+
+    public SessionSummary summarize(ScoringContext context, int totalScore,
+                                    List<MainQuestionScore> perQuestion, int totalSkipped) {
+        String system = prompts.get(PromptTemplates.SCORING_SUMMARY_SYSTEM);
+        String user = buildSummaryUser(context, totalScore, perQuestion, totalSkipped);
+
+        Map<String, Object> inputSchema = Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "summary", Map.of("type", "string", "description",
+                                "면접 전체 총평, 해요체 두 문장 이내, 점수 숫자 금지"),
+                        "keyCoachingWeakness", Map.of("type", "string", "description", "반복된 약점 하나, 한 문장"),
+                        "keyCoachingAction", Map.of("type", "string", "description",
+                                "다음 면접 답변에서 바로 쓸 말하기 방법 하나, 한두 문장")
+                ),
+                "required", List.of("summary", "keyCoachingWeakness", "keyCoachingAction")
+        );
+
+        JsonNode toolInput = callTool(system, user, "summarize_session",
+                "면접 전체를 종합하여 총평과 핵심 코칭을 반환합니다.", inputSchema, SUMMARY_MAX_TOKENS);
+
+        return new SessionSummary(
+                text(toolInput, "summary"),
+                text(toolInput, "keyCoachingWeakness"),
+                text(toolInput, "keyCoachingAction")
+        );
+    }
+
+    private Map<String, Object> mainSchema(List<Axis> axes, int tailCount) {
         Map<String, Object> axisScoreSchema = new HashMap<>();
         for (Axis axis : axes) {
             axisScoreSchema.put(axis.code(), Map.of(
@@ -68,15 +117,16 @@ public class FeedbackScoringClient {
                 "properties", Map.of(
                         "good", Map.of("type", "string", "description", "잘한 점, 해요체 2문장 이내"),
                         "weak", Map.of("type", "string", "description", "빠진 점을 사실만 짚어 해요체 2문장 이내"),
-                        "next", Map.of("type", "string", "description", "다음 답변에서 해볼 말하기 방법 하나"),
+                        "next", Map.of("type", "string", "description",
+                                "다음 답변에서 해볼 말하기 방법 하나, 예시의 숫자는 [수치] 빈칸"),
                         "weakAxis", Map.of("type", "string", "description", "가장 약한 축과 이유 한 문장"),
                         "improvedAfter", Map.of("type", "string", "description",
-                                "고친 답변 4~5문장, 말하지 않은 수치와 결과는 [수치] [결과] 빈칸")
+                                "이 꼬리 답변 내용만으로 결론 먼저 고쳐 쓴 ~했습니다 체 답변 4~5문장, 새 사실 금지")
                 ),
                 "required", List.of("good", "weak", "next", "weakAxis", "improvedAfter")
         );
 
-        Map<String, Object> inputSchema = Map.of(
+        return Map.of(
                 "type", "object",
                 "properties", Map.of(
                         "shortTitle", Map.of("type", "string", "description", "메인 질문만 요약한 15자 안팎 명사구"),
@@ -87,51 +137,21 @@ public class FeedbackScoringClient {
                         ),
                         "good", Map.of("type", "string", "description", "메인 답변에서 잘한 점, 해요체 2문장 이내"),
                         "weak", Map.of("type", "string", "description", "메인 답변에서 빠진 점, 해요체 2문장 이내"),
-                        "next", Map.of("type", "string", "description", "다음 답변에서 해볼 말하기 방법 하나"),
+                        "next", Map.of("type", "string", "description",
+                                "다음 답변에서 해볼 말하기 방법 하나, 예시의 숫자는 [수치] 빈칸"),
                         "weakAxis", Map.of("type", "string", "description", "가장 약한 축과 이유 한 문장"),
                         "improvedAfter", Map.of("type", "string", "description",
-                                "메인 답변을 고친 답변 4~5문장, 말하지 않은 수치와 결과는 [수치] [결과] 빈칸"),
+                                "메인 답변 내용만으로 결론 먼저 고쳐 쓴 ~했습니다 체 답변 4~5문장, 꼬리 답변 내용과 새 사실 금지"),
                         "tails", Map.of(
                                 "type", "array",
                                 "items", tailItemSchema,
-                                "minItems", input.tails().size(),
-                                "maxItems", input.tails().size(),
-                                "description", "꼬리 질문별 피드백, 꼬리 질문 수와 같은 개수로 순서 유지"
+                                "minItems", tailCount,
+                                "maxItems", tailCount,
+                                "description", "꼬리 질문별 피드백 객체 배열, 꼬리 질문 수와 같은 개수로 순서 유지"
                         )
                 ),
                 "required", List.of("shortTitle", "axisScores", "good", "weak", "next", "weakAxis",
                         "improvedAfter", "tails")
-        );
-
-        JsonNode toolInput = callTool(system, user, "score_answer",
-                "면접 답변을 채점하여 축별 점수와 피드백을 반환합니다.", inputSchema, 4000);
-
-        return parseMainScore(axes, input.tails().size(), input.answer(), toolInput);
-    }
-
-    public SessionSummary summarize(ScoringContext context, int totalScore,
-                                    List<MainQuestionScore> perQuestion, int totalSkipped) {
-        String system = prompts.get(PromptTemplates.SCORING_SUMMARY_SYSTEM);
-        String user = buildSummaryUser(context, totalScore, perQuestion, totalSkipped);
-
-        Map<String, Object> inputSchema = Map.of(
-                "type", "object",
-                "properties", Map.of(
-                        "summary", Map.of("type", "string", "description", "면접 전체 총평, 해요체 두 문장 이내"),
-                        "keyCoachingWeakness", Map.of("type", "string", "description", "반복된 약점 하나, 한 문장"),
-                        "keyCoachingAction", Map.of("type", "string", "description",
-                                "다음 면접 답변에서 바로 쓸 말하기 방법 하나, 한두 문장")
-                ),
-                "required", List.of("summary", "keyCoachingWeakness", "keyCoachingAction")
-        );
-
-        JsonNode toolInput = callTool(system, user, "summarize_session",
-                "면접 전체를 종합하여 총평과 핵심 코칭을 반환합니다.", inputSchema, 1500);
-
-        return new SessionSummary(
-                text(toolInput, "summary"),
-                text(toolInput, "keyCoachingWeakness"),
-                text(toolInput, "keyCoachingAction")
         );
     }
 
@@ -161,11 +181,17 @@ public class FeedbackScoringClient {
                 .retrieve()
                 .body(JsonNode.class);
 
-        log.info("채점 호출 tool={} {}ms inputTokens={} outputTokens={}",
+        String stopReason = response.path("stop_reason").asText("");
+        log.info("채점 호출 tool={} {}ms inputTokens={} outputTokens={} stopReason={}",
                 toolName,
                 System.currentTimeMillis() - startedAt,
                 response.path("usage").path("input_tokens").asInt(-1),
-                response.path("usage").path("output_tokens").asInt(-1));
+                response.path("usage").path("output_tokens").asInt(-1),
+                stopReason);
+
+        if ("max_tokens".equals(stopReason)) {
+            log.warn("채점 응답이 max_tokens에서 잘림 tool={} maxTokens={}", toolName, maxTokens);
+        }
 
         for (JsonNode content : response.path("content")) {
             if ("tool_use".equals(content.path("type").asText())) {
@@ -178,13 +204,13 @@ public class FeedbackScoringClient {
     private MainQuestionScore parseMainScore(List<Axis> axes, int expectedTailCount,
                                              String mainAnswer, JsonNode in) {
         Map<String, Integer> axisScores = new HashMap<>();
-        JsonNode scoresNode = in.path("axisScores");
+        JsonNode scoresNode = asJson(in.path("axisScores"));
         for (Axis axis : axes) {
             axisScores.put(axis.code(), clamp(parseInt(scoresNode, axis.code())));
         }
 
         List<FeedbackContent.TailContent> tails = new ArrayList<>();
-        for (JsonNode t : in.path("tails")) {
+        for (JsonNode t : asJson(in.path("tails"))) {
             tails.add(new FeedbackContent.TailContent(
                     text(t, "good"),
                     text(t, "weak"),
@@ -211,6 +237,25 @@ public class FeedbackScoringClient {
         return new MainQuestionScore(text(in, "shortTitle"), axisScores, content);
     }
 
+    /**
+     * 배열이나 객체가 JSON 문자열로 감싸져 오는 경우를 풀어서 돌려준다.
+     */
+    private JsonNode asJson(JsonNode node) {
+        if (node == null || !node.isTextual()) {
+            return node;
+        }
+        String raw = node.asText().trim();
+        if (!(raw.startsWith("[") || raw.startsWith("{"))) {
+            return node;
+        }
+        try {
+            return objectMapper.readTree(raw);
+        } catch (Exception e) {
+            log.warn("문자열 JSON 파싱 실패: {}", e.getMessage());
+            return node;
+        }
+    }
+
     private String buildMainUser(List<Axis> axes, ScoringContext ctx, MainQuestionInput input) {
         String axisGuide = axes.stream()
                 .map(a -> "- %s %s: 가중치 %d%%".formatted(a.code(), a.label(), a.weight()))
@@ -222,8 +267,8 @@ public class FeedbackScoringClient {
             for (TailInput t : input.tails()) {
                 tailText.append("""
                         [꼬리 질문 %d] 전략: %s
-                        <question>%s</question>
-                        <answer>%s</answer>
+                        <tail_question>%s</tail_question>
+                        <tail_answer>%s</tail_answer>
                         """.formatted(idx++, nvl(t.strategy()), nvl(t.question()), nvl(t.answer())));
             }
         }
