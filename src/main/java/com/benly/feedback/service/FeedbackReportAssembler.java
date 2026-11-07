@@ -49,13 +49,25 @@ public class FeedbackReportAssembler {
         return assembleRadar(axisSet, scoreAxes, null);
     }
 
+    /** 발표 카드에 붙일 PT 정보. QA면 null */
+    public record PresentationMeta(String taskTitle, String transcript, Integer durationSeconds, String track) {
+    }
+
+    public List<Card> assembleCards(
+            List<Feedback> feedbacks,
+            List<Question> allQuestions,
+            List<Answer> allAnswers) {
+        return assembleCards(feedbacks, allQuestions, allAnswers, null);
+    }
+
     /**
      * cards 조립: 발표 카드가 있으면 맨 앞, 이어서 질문 카드와 그 꼬리들.
      */
     public List<Card> assembleCards(
             List<Feedback> feedbacks,
             List<Question> allQuestions,
-            List<Answer> allAnswers) {
+            List<Answer> allAnswers,
+            PresentationMeta meta) {
 
         Map<Long, Answer> answerByQuestion = allAnswers.stream()
                 .collect(Collectors.toMap(a -> a.getQuestion().getId(), a -> a));
@@ -68,7 +80,7 @@ public class FeedbackReportAssembler {
         for (Feedback fb : feedbacks) {
             FeedbackContent content = contentParser.parse(fb.getContent());
             cards.add(fb.isPresentation()
-                    ? presentationCard(fb, content)
+                    ? presentationCard(fb, content, meta)
                     : questionCard(fb, content, tailsByParent, answerByQuestion));
         }
         return cards;
@@ -103,28 +115,49 @@ public class FeedbackReportAssembler {
         );
     }
 
-    // 발표 카드 세부 항목은 PT 채점 이슈에서 채운다
-    private Card presentationCard(Feedback fb, FeedbackContent content) {
+    private Card presentationCard(Feedback fb, FeedbackContent content, PresentationMeta meta) {
+        String transcript = meta == null ? null : meta.transcript();
+        boolean skipped = transcript == null || transcript.isBlank();
+        String title = meta == null ? null : meta.taskTitle();
+
         return new Card(
                 CardType.PRESENTATION.name(),
                 null,
                 0,
-                null,
+                title,
                 fb.getTopicScore(),
+                title,
+                skipped ? null : transcript,
+                skipped,
+                meta == null ? null : meta.durationSeconds(),
+                meta == null ? null : meta.track(),
+                requirementsOf(content),
+                skipped || content == null ? null : content.good(),
+                skipped || content == null ? null : content.weak(),
+                skipped || content == null ? null : content.next(),
+                skipped || content == null ? null : content.weakAxis(),
                 null,
-                null,
-                false,
-                null,
-                null,
-                List.of(),
-                content != null ? content.good() : null,
-                content != null ? content.weak() : null,
-                content != null ? content.next() : null,
-                content != null ? content.weakAxis() : null,
-                null,
-                null,
+                skipped ? null : outlineOf(content),
                 List.of()
         );
+    }
+
+    private List<Requirement> requirementsOf(FeedbackContent content) {
+        if (content == null || content.requirements() == null) {
+            return List.of();
+        }
+        return content.requirements().stream()
+                .map(r -> new Requirement(r.requirement(), r.status(), r.evidence()))
+                .toList();
+    }
+
+    private ImprovedOutline outlineOf(FeedbackContent content) {
+        if (content == null || content.improvedOutline() == null) {
+            return null;
+        }
+        return new ImprovedOutline(
+                content.improvedOutline().before() == null ? List.of() : content.improvedOutline().before(),
+                content.improvedOutline().after() == null ? List.of() : content.improvedOutline().after());
     }
 
     private List<Tail> assembleTails(
