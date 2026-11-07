@@ -1,5 +1,6 @@
 package com.benly.question.service;
 
+import com.benly.feedback.event.TopicFinishedEvent;
 import com.benly.global.exception.BusinessException;
 import com.benly.question.dto.AnswerCreateRequest;
 import com.benly.question.dto.AnswerResponse;
@@ -14,6 +15,7 @@ import com.benly.session.entity.Session;
 import com.benly.session.entity.SessionStatus;
 import com.benly.session.repository.SessionRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -31,6 +33,7 @@ public class AnswerCommandService {
     private final AnswerRepository answerRepository;
     private final QuestionRepository questionRepository;
     private final SessionRepository sessionRepository; // 세션 상태 변경(Dirty Checking)을 위한 의존성 추가
+    private final ApplicationEventPublisher eventPublisher; // 주제 종료 시 미리 채점 이벤트 발행
 
     private static final int MIN_ANSWER_LENGTH = 10;
 
@@ -178,6 +181,8 @@ public class AnswerCommandService {
 
     // 다음 메인 or 종료 판단 및 상태 변경도 독립 트랜잭션 사용
     // [Data Integrity 피드백 반영] 엔티티 대신 식별자(ID)를 받아 새 트랜잭션 안에서 DB를 다시 조회합니다.
+    // 주제가 끝나는 모든 경로(꼬리2 답변·스킵, 메인 스킵, 꼬리 생성 실패)가 여기를 지나므로
+    // 이 시점에 미리 채점 이벤트를 발행한다. 커밋 후에 채점이 시작된다.
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public AnswerResponse.NextAction decideNextMainOrFinish(Long mainQuestionId, Long sessionId) {
         // 1. 새 트랜잭션에서 세션과 질문을 영속 상태(Managed)로 다시 조회
@@ -185,6 +190,9 @@ public class AnswerCommandService {
                 .orElseThrow(() -> new BusinessException(AnswerErrorCode.QUESTION_SESSION_MISMATCH));
         Question mainQuestion = questionRepository.findById(mainQuestionId)
                 .orElseThrow(() -> new BusinessException(AnswerErrorCode.QUESTION_NOT_FOUND));
+
+        // 2. 이 주제는 끝났으니 미리 채점 시작
+        eventPublisher.publishEvent(new TopicFinishedEvent(sessionId, mainQuestionId));
 
         Optional<Question> nextMain = questionRepository
                 .findFirstBySessionAndParentIsNullAndSeqGreaterThanOrderBySeqAsc(

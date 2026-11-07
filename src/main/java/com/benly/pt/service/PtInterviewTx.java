@@ -1,5 +1,7 @@
 package com.benly.pt.service;
 
+import com.benly.feedback.event.PresentationSubmittedEvent;
+import com.benly.feedback.event.TopicFinishedEvent;
 import com.benly.global.exception.BusinessException;
 import com.benly.pt.dto.*;
 import com.benly.pt.entity.*;
@@ -14,6 +16,7 @@ import com.benly.session.repository.SessionRepository;
 import com.benly.user.repository.UserRepository;
 
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +38,7 @@ public class PtInterviewTx {
     private final AnswerRepository answers;
     private final PtContentCodec codec;
     private final ObjectMapper mapper;
+    private final ApplicationEventPublisher events;
     private final Clock clock;
 
     public PtInterviewTx(
@@ -47,6 +51,7 @@ public class PtInterviewTx {
             AnswerRepository answers,
             PtContentCodec codec,
             ObjectMapper mapper,
+            ApplicationEventPublisher events,
             @Qualifier("ptClock") Clock clock) {
         this.details = details;
         this.sessions = sessions;
@@ -57,6 +62,7 @@ public class PtInterviewTx {
         this.answers = answers;
         this.codec = codec;
         this.mapper = mapper;
+        this.events = events;
         this.clock = clock;
     }
 
@@ -199,6 +205,8 @@ public class PtInterviewTx {
         detail.submitAudioPresentation(
                 requestId, text, hash, durationSec, plan.admittedAt(), clock.instant());
         detail.clearOperation();
+        detail.clearOperation();
+        events.publishEvent(new PresentationSubmittedEvent(sessionId));
         return PtProgressResponse.from(detail, clock.instant());
     }
 
@@ -333,6 +341,10 @@ public class PtInterviewTx {
         turn.recordAnswer(requestId, hash);
         turns.flush();
         detail.finishAnswer(turn.getOrdinal() == PtInterviewRules.TOTAL_QUESTION_COUNT);
+        if (turn.followUpNumber() == 2) {
+            Long mainQuestionId = turn.getQuestion().getParent().getId();
+            events.publishEvent(new TopicFinishedEvent(detail.getId(), mainQuestionId));
+        }
         return answerView(detail, answer);
     }
 
