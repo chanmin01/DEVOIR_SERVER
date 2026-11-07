@@ -1,9 +1,9 @@
 package com.benly.history.dto;
 
 import com.benly.feedback.entity.SessionFeedback;
+import com.benly.global.common.KstTime;
 import com.benly.session.entity.Session;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 public record SessionHistoryResponse(
@@ -23,7 +23,7 @@ public record SessionHistoryResponse(
             String companyName,
             String jobRole,
             String status,
-            LocalDateTime createdAt,
+            String createdAt,
             Integer totalScore
     ) {
         public static Item from(SessionFeedback sf) {
@@ -35,7 +35,7 @@ public record SessionHistoryResponse(
                     s.getCompanyName(),
                     s.getJobTitle(),
                     s.getStatus().name(),
-                    s.getCreatedAt(),
+                    KstTime.format(s.getCreatedAt()),
                     sf.getTotalScore()
             );
         }

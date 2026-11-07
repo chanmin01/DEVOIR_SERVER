@@ -4,6 +4,7 @@ import com.benly.document.entity.Document;
 import com.benly.document.exception.DocumentErrorCode;
 import com.benly.document.repository.DocumentRepository;
 import com.benly.global.exception.BusinessException;
+import com.benly.global.recovery.StaleTaskPolicy;
 import com.benly.question.dto.CurrentQuestionResponse;
 import com.benly.question.entity.Question;
 import com.benly.question.repository.QuestionRepository;
@@ -18,6 +19,8 @@ import com.benly.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.benly.session.event.SessionCanceledEvent;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
 
@@ -27,9 +30,11 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class SessionService {
     private final SessionRepository sessionRepository;
-    private final UserRepository userRepository; // 여기 부분은 user 담당자가 repository를 만들면 적용
+    private final UserRepository userRepository;
     private final DocumentRepository documentRepository;
     private final QuestionRepository questionRepository;
+    private final StaleTaskPolicy staleTaskPolicy;
+    private final ApplicationEventPublisher events;
 
     @Transactional
     public SessionCreateResponse createSession(Long userId, SessionCreateRequest sessionCreateRequest) {
@@ -116,8 +121,8 @@ public class SessionService {
         return SessionDetailResponse.from(session, current, total);
     }
 
-    // 질문 생성 상태 폴링
-    @Transactional(readOnly = true)
+    // 질문 생성 상태 폴링. 멈춘 생성은 여기서 FAILED로 기록한다
+    @Transactional
     public GenerationStatusResponse getGenerationStatus(Long userId, Long sessionId) {
         Session session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new BusinessException(SessionErrorCode.SESSION_NOT_FOUND));
@@ -126,7 +131,17 @@ public class SessionService {
             throw new BusinessException(SessionErrorCode.SESSION_FORBIDDEN);
         }
 
-        return GenerationStatusResponse.from(session);
+        var startedThreshold = staleTaskPolicy.generationThreshold();
+        var queuedThreshold = staleTaskPolicy.generationQueueThreshold();
+        if (!session.isGenerationStale(startedThreshold, queuedThreshold)) {
+            return GenerationStatusResponse.from(session);
+        }
+
+        int failed = sessionRepository.failStaleGeneratingById(sessionId, startedThreshold, queuedThreshold);
+        SessionStatus status = failed > 0
+                ? SessionStatus.FAILED
+                : sessionRepository.findStatusById(sessionId);   // 그사이 워커가 끝냈으면 그 상태
+        return new GenerationStatusResponse(status.name());
     }
 
     // 채점 요청 (analyze)
@@ -193,6 +208,7 @@ public class SessionService {
         }
 
         session.markCanceled(); // 영속성 컨텍스트 상태 동기화
+        events.publishEvent(new SessionCanceledEvent(sessionId));
 
         return SessionCancelResponse.from(session);
     }

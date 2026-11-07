@@ -1,0 +1,32 @@
+[면접 정보]
+기업 유형: {{companyType}}
+직무: {{jobTitle}}
+
+[과제]
+제목: {{taskTitle}}
+서비스 설명: {{serviceDescription}}
+현재 이용 흐름:
+{{currentFlow}}
+문제 상황: {{problemSituation}}
+사용할 수 있는 자료:
+{{availableData}}
+제약 조건:
+{{constraints}}
+연습용 가정:
+{{exerciseAssumptions}}
+선택한 분야: {{trackLabel}}
+분야 가이드: {{trackGuidance}}
+
+[발표 요구사항, 이 순서대로 판정]
+{{requirements}}
+
+[평가축]
+{{axes}}
+
+[발표]
+발표 시간: {{duration}}
+<presentation>{{transcript}}</presentation>
+
+[다시 확인]
+피드백과 요구사항 판정, 개선 개요는 <presentation> 안의 발표 내용만 근거로 씁니다. 발표에 없는 사실을 만들지 않습니다.
+위 과제에 적힌 수치와 가정은 제공된 정보입니다. 지원자가 이를 그대로 쓰면 제공되지 않은 수치로 보지 않습니다.

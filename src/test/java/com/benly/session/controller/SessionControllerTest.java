@@ -1,6 +1,7 @@
 package com.benly.session.controller;
 
 
+import com.benly.pt.repository.PtSessionRepository;
 import com.benly.question.service.QuestionGenerationService;
 import com.benly.session.dto.SessionCreateRequest;
 import com.benly.session.dto.SessionCreateResponse;
@@ -23,6 +24,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(SessionController.class)
 public class SessionControllerTest {
+
+    @MockitoBean
+    private PtSessionRepository ptSessionRepository;
+
 
     @Autowired
     private MockMvc mockMvc;
