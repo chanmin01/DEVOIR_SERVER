@@ -80,6 +80,7 @@ public class FeedbackScoringTx {
         return new ScoringPlan(axisSet.axes(), ctx, axisSet, mains, format, presentation);
     }
 
+    /** 지원자가 준비 화면에서 본 과제 내용을 빠짐없이 채점기에 넘긴다 */
     private PresentationInput loadPresentation(Long sessionId) {
         PtSession pt = ptSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new BusinessException(FeedbackErrorCode.SESSION_NOT_FOUND));
@@ -92,15 +93,23 @@ public class FeedbackScoringTx {
 
         return new PresentationInput(
                 task.title(),
+                task.serviceDescription(),
+                listOrEmpty(task.currentFlow()),
                 task.problemSituation(),
-                task.constraints() == null ? List.of() : task.constraints(),
+                listOrEmpty(task.availableData()),
+                listOrEmpty(task.constraints()),
+                listOrEmpty(task.exerciseAssumptions()),
                 track == null ? null : track.name(),
                 track == null ? null : track.getLabel(),
                 guidance,
-                task.presentationRequirements() == null ? List.of() : task.presentationRequirements(),
+                listOrEmpty(task.presentationRequirements()),
                 pt.getPresentationDurationSec(),
                 pt.getPresentationTranscript()
         );
+    }
+
+    private List<String> listOrEmpty(List<String> list) {
+        return list == null ? List.of() : list;
     }
 
     private MainQuestionInput toInput(Question main,

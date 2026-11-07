@@ -153,7 +153,8 @@ class FeedbackCommandServiceTest {
         AxisSet axisSet = AxisSet.PERSONALITY;
         ScoringContext ctx = new ScoringContext("FINANCE_IT", "PT", "백엔드");
         PresentationInput noPresentation = new PresentationInput(
-                "과제", "문제", List.of(), "AI", "AI", "가이드",
+                "과제", "서비스 설명", List.of(), "문제", List.of(), List.of(), List.of(),
+                "AI", "AI", "가이드",
                 List.of("요구1", "요구2"), null, null);
         ScoringPlan plan = new ScoringPlan(
                 axisSet.axes(), ctx, axisSet,

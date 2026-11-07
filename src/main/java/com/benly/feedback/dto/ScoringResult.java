@@ -84,11 +84,15 @@ public class ScoringResult {
     ) {
     }
 
-    /** PT 발표 채점 입력. 과제 내용과 발표 원문 */
+    /** PT 발표 채점 입력. 지원자가 본 과제 내용 전체와 발표 원문 */
     public record PresentationInput(
             String taskTitle,
+            String serviceDescription,
+            List<String> currentFlow,
             String problemSituation,
+            List<String> availableData,
             List<String> constraints,
+            List<String> exerciseAssumptions,
             String track,
             String trackLabel,
             String trackGuidance,

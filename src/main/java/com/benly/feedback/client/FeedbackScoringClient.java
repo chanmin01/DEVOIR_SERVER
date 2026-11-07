@@ -35,6 +35,7 @@ import java.util.stream.IntStream;
  * 프롬프트 본문은 resources/prompts 아래 파일에 있고, 여기서는 값만 채워 호출한다.
  * 툴은 strict 모드로 호출한다. strict 모드는 스키마의 필드 순서대로 생성하므로
  * 스키마는 항상 LinkedHashMap으로 만들어 순서를 고정한다.
+ * 로그에는 지원자 답변이나 모델 응답 원문을 남기지 않는다.
  */
 @Slf4j
 @Component
@@ -44,7 +45,6 @@ public class FeedbackScoringClient {
     private static final int PRESENTATION_MAX_TOKENS = 4000;
     private static final int SUMMARY_MAX_TOKENS = 1500;
     private static final int MAX_ATTEMPTS = 2;
-    private static final int RAW_LOG_LIMIT = 3000;
     private static final Set<String> REQUIREMENT_STATUSES = Set.of("COVERED", "PARTIAL", "MISSING");
     // 문장 안에 다음 필드가 섞여 들어온 흔적. 예: ...했습니다.", "shortTitle": "...
     private static final Pattern LEAKED_JSON = Pattern.compile("\"\\s*,\\s*\"\\w+\"\\s*:");
@@ -85,9 +85,9 @@ public class FeedbackScoringClient {
 
         IllegalStateException lastError = null;
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-            JsonNode toolInput = callTool(system, user, "score_answer",
-                    "면접 답변을 채점하여 축별 점수와 피드백을 반환합니다.", inputSchema, MAIN_MAX_TOKENS);
             try {
+                JsonNode toolInput = callTool(system, user, "score_answer",
+                        "면접 답변을 채점하여 축별 점수와 피드백을 반환합니다.", inputSchema, MAIN_MAX_TOKENS);
                 return parseMainScore(axes, input.tails().size(), input.answer(), toolInput);
             } catch (IllegalStateException e) {
                 lastError = e;
@@ -104,10 +104,10 @@ public class FeedbackScoringClient {
 
         IllegalStateException lastError = null;
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-            JsonNode toolInput = callTool(system, user, "score_presentation",
-                    "PT 발표를 채점하여 축별 점수, 요구사항 판정, 개선 개요를 반환합니다.",
-                    inputSchema, PRESENTATION_MAX_TOKENS);
             try {
+                JsonNode toolInput = callTool(system, user, "score_presentation",
+                        "PT 발표를 채점하여 축별 점수, 요구사항 판정, 개선 개요를 반환합니다.",
+                        inputSchema, PRESENTATION_MAX_TOKENS);
                 return parsePresentation(axes, input.requirements(), toolInput);
             } catch (IllegalStateException e) {
                 lastError = e;
@@ -258,6 +258,7 @@ public class FeedbackScoringClient {
     }
 
     // ===== 호출 =====
+
     private JsonNode callTool(String system, String user, String toolName, String toolDesc,
                               Map<String, Object> inputSchema, int maxTokens) {
         Map<String, Object> requestBody = ordered(
@@ -336,14 +337,15 @@ public class FeedbackScoringClient {
 
     /**
      * 꼬리 피드백을 tailNumber 기준으로 제자리에 놓는다.
-     * 모델이 배열 순서를 바꿔 보내도 질문과 피드백이 어긋나지 않게 한다.
+     * 번호가 범위 밖이거나 중복이면 질문과 피드백이 어긋날 수 있으므로 형식 오류로 보고 재시도한다.
      */
     private List<FeedbackContent.TailContent> parseTails(int expectedTailCount, JsonNode in) {
         List<JsonNode> nodes = new ArrayList<>();
         asJson(in.path("tails")).forEach(nodes::add);
 
         if (nodes.size() != expectedTailCount) {
-            log.warn("꼬리 개수 불일치 원본 응답: {}", abbreviate(in.toString()));
+            log.warn("꼬리 개수 불일치 기대={} 실제={} 받은필드={}",
+                    expectedTailCount, nodes.size(), fieldNames(in));
             throw new IllegalStateException(
                     "꼬리 피드백 개수 불일치: 기대=%d, 실제=%d".formatted(expectedTailCount, nodes.size()));
         }
@@ -352,10 +354,13 @@ public class FeedbackScoringClient {
         for (int i = 0; i < nodes.size(); i++) {
             JsonNode t = nodes.get(i);
             int number = parseInt(t, "tailNumber");
-            int slot = (number >= 1 && number <= expectedTailCount) ? number - 1 : i;
 
+            if (number < 1 || number > expectedTailCount) {
+                throw new IllegalStateException(
+                        "꼬리 피드백 번호 범위 밖: 번호=%d, 꼬리수=%d".formatted(number, expectedTailCount));
+            }
+            int slot = number - 1;
             if (slots[slot] != null) {
-                log.warn("꼬리 번호 중복 원본 응답: {}", abbreviate(in.toString()));
                 throw new IllegalStateException("꼬리 피드백 번호 중복: " + number);
             }
             if (slot != i) {
@@ -379,7 +384,8 @@ public class FeedbackScoringClient {
         List<JsonNode> reqNodes = new ArrayList<>();
         asJson(in.path("requirements")).forEach(reqNodes::add);
         if (reqNodes.size() != requirementTexts.size()) {
-            log.warn("요구사항 개수 불일치 원본 응답: {}", abbreviate(in.toString()));
+            log.warn("요구사항 개수 불일치 기대={} 실제={} 받은필드={}",
+                    requirementTexts.size(), reqNodes.size(), fieldNames(in));
             throw new IllegalStateException(
                     "요구사항 판정 개수 불일치: 기대=%d, 실제=%d".formatted(requirementTexts.size(), reqNodes.size()));
         }
@@ -415,14 +421,23 @@ public class FeedbackScoringClient {
         return new PresentationScore(axisScores, content);
     }
 
-    /** 문장 안에 JSON 조각이 섞여 있으면 예외를 던져 재시도하게 한다 */
+    /** 문장 안에 JSON 조각이 섞여 있으면 예외를 던져 재시도하게 한다. 로그에는 필드명만 남긴다 */
     private String cleanText(JsonNode node, String field) {
         String v = text(node, field);
         if (v != null && LEAKED_JSON.matcher(v).find()) {
-            log.warn("문장에 JSON 조각 섞임 field={} 값={}", field, abbreviate(v));
+            log.warn("문장에 JSON 조각 섞임 field={} 길이={}", field, v.length());
             throw new IllegalStateException("문장에 JSON 조각 섞임: " + field);
         }
         return v;
+    }
+
+    /** 진단용. 응답 원문 대신 최상위 필드 이름만 돌려준다 */
+    private List<String> fieldNames(JsonNode node) {
+        List<String> names = new ArrayList<>();
+        if (node != null && node.isObject()) {
+            node.propertyNames().forEach(names::add);
+        }
+        return names;
     }
 
     private List<String> stringList(JsonNode node) {
@@ -450,16 +465,9 @@ public class FeedbackScoringClient {
         try {
             return objectMapper.readTree(raw);
         } catch (Exception e) {
-            log.warn("문자열 JSON 파싱 실패: {} 원본: {}", e.getMessage(), abbreviate(raw));
+            log.warn("문자열 JSON 파싱 실패 길이={} 사유={}", raw.length(), e.getClass().getSimpleName());
             return node;
         }
-    }
-
-    private String abbreviate(String s) {
-        if (s == null) {
-            return "";
-        }
-        return s.length() > RAW_LOG_LIMIT ? s.substring(0, RAW_LOG_LIMIT) : s;
     }
 
     // ===== 프롬프트 조립 =====
@@ -468,6 +476,13 @@ public class FeedbackScoringClient {
         return axes.stream()
                 .map(a -> "- %s %s: 가중치 %d%%".formatted(a.code(), a.label(), a.weight()))
                 .collect(Collectors.joining("\n"));
+    }
+
+    private String bulletList(List<String> items) {
+        if (items == null || items.isEmpty()) {
+            return "없음";
+        }
+        return items.stream().map(s -> "- " + s).collect(Collectors.joining("\n"));
     }
 
     private String buildMainUser(List<Axis> axes, ScoringContext ctx, MainQuestionInput input) {
@@ -495,10 +510,6 @@ public class FeedbackScoringClient {
     }
 
     private String buildPresentationUser(List<Axis> axes, ScoringContext ctx, PresentationInput in) {
-        String constraints = in.constraints().stream()
-                .map(c -> "- " + c)
-                .collect(Collectors.joining("\n"));
-
         String requirements = IntStream.range(0, in.requirements().size())
                 .mapToObj(i -> "%d. %s".formatted(i + 1, in.requirements().get(i)))
                 .collect(Collectors.joining("\n"));
@@ -511,8 +522,12 @@ public class FeedbackScoringClient {
                 Map.entry("companyType", nvl(ctx.companyType())),
                 Map.entry("jobTitle", nvl(ctx.jobTitle())),
                 Map.entry("taskTitle", nvl(in.taskTitle())),
+                Map.entry("serviceDescription", nvl(in.serviceDescription())),
+                Map.entry("currentFlow", bulletList(in.currentFlow())),
                 Map.entry("problemSituation", nvl(in.problemSituation())),
-                Map.entry("constraints", constraints.isEmpty() ? "없음" : constraints),
+                Map.entry("availableData", bulletList(in.availableData())),
+                Map.entry("constraints", bulletList(in.constraints())),
+                Map.entry("exerciseAssumptions", bulletList(in.exerciseAssumptions())),
                 Map.entry("trackLabel", nvl(in.trackLabel())),
                 Map.entry("trackGuidance", nvl(in.trackGuidance())),
                 Map.entry("requirements", requirements),
