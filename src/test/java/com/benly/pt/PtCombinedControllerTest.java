@@ -259,15 +259,22 @@ class PtCombinedControllerTest {
     }
 
     @Test
-    void legacyAnswerAndScoringAreBlockedOnlyForPt() throws Exception {
-        for (String path : new String[] {"/answers/text", "/feedback"}) {
-            mvc.perform(post("/api/v1/sessions/101" + path).header("Authorization", "Bearer valid"))
-                    .andExpect(status().isConflict())
-                    .andExpect(jsonPath("$.message").value("PT 전용 진행 API를 사용해주세요."));
-        }
+    void legacyAnswerIsBlockedOnlyForPt() throws Exception {
+        mvc.perform(post("/api/v1/sessions/101/answers/text").header("Authorization", "Bearer valid"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("PT 전용 진행 API를 사용해주세요."));
+
         mvc.perform(
                         post("/api/v1/sessions/102/answers/text")
                                 .header("Authorization", "Bearer valid"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("normal"));
+    }
+
+    @Test
+    void scoringRequestIsSharedWithPt() throws Exception {
+        // 채점 API는 QA와 PT가 같이 쓴다
+        mvc.perform(post("/api/v1/sessions/101/feedback").header("Authorization", "Bearer valid"))
                 .andExpect(status().isOk())
                 .andExpect(content().string("normal"));
     }
