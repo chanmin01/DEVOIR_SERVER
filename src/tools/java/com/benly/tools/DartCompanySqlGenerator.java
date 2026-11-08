@@ -38,6 +38,8 @@ import java.util.zip.ZipInputStream;
  * 고유번호 목록의 종목코드는 상장폐지나 합병 후에도 남아 있어서, 기업개황 API의 법인구분으로 현재 상장 여부를 다시 확인한다.
  * tools 소스셋에 있어서 운영 jar와 테스트에 포함되지 않는다.
  * 실행: DART_API_KEY=발급키 ./gradlew generateDartCompanySql
+ * 이미 적용된 마이그레이션은 덮어쓰지 않는다. 다시 만들 때는 새 버전 파일 경로를 넘긴다.
+ * 예: ./gradlew generateDartCompanySql --args="src/main/resources/db/migration/V20__refresh_dart_listed_companies.sql"
  */
 public final class DartCompanySqlGenerator {
 
@@ -94,6 +96,9 @@ public final class DartCompanySqlGenerator {
             throw new IllegalStateException("환경변수 DART_API_KEY가 없습니다.");
         }
         Path output = args.length > 0 ? Path.of(args[0]) : DEFAULT_OUTPUT;
+        if (Files.exists(output)) {
+            throw new IllegalStateException(output + " 파일이 이미 있습니다. 적용된 마이그레이션을 덮어쓰면 Flyway 검증이 실패하니 새 버전 파일 경로를 인자로 넘겨주세요.");
+        }
 
         DartCompanySqlGenerator generator = new DartCompanySqlGenerator(apiKey.trim());
         List<Corp> corps = generator.readCorps(generator.downloadCorpCodes());
