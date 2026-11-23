@@ -13,8 +13,7 @@ public record PtSessionCreateRequest(
         Long companyId,
 
         @NotNull(message = "준비 시간은 필수입니다.")
-        @Min(15)
-        @Max(20)
+        @Positive
         Integer preparationMinutes,
 
         @Size(max = 100)

@@ -10,6 +10,8 @@ public final class PtInterviewRules {
 
     public static final int PRESENTATION_SECONDS = 300;
 
+    public static final int MAX_QUESTION_LENGTH = 120;
+
     public static final int PRESENTATION_SUBMISSION_GRACE_SECONDS = 60;
 
     public static final int MAIN_QUESTION_COUNT = 2;

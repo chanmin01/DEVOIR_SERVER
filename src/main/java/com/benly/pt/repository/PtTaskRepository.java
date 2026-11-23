@@ -24,11 +24,19 @@ public interface PtTaskRepository
     @Query("""
         select distinct new com.benly.pt.dto.PtCompanyOptionResponse(
             c.id,
-            c.name
+            c.name,
+            t
         )
         from PtTask t
         join t.company c
         where t.status = :status
+          and not exists (
+              select newer.id
+              from PtTask newer
+              where newer.company.id = c.id
+                and newer.status = :status
+                and newer.id > t.id
+          )
         order by c.name
         """)
     List<PtCompanyOptionResponse> findAvailableCompanies(

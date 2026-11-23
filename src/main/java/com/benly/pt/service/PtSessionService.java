@@ -54,9 +54,12 @@ public class PtSessionService {
             Long userId,
             PtSessionCreateRequest request
     ) {
-        if (request.requestId() == null
-                || !PtInterviewRules.PREPARATION_MINUTES
-                .contains(request.preparationMinutes())) {
+        if (request == null
+                || request.requestId() == null
+                || request.companyId() == null
+                || request.companyId() <= 0
+                || request.preparationMinutes() == null
+                || request.preparationMinutes() <= 0) {
             throw new BusinessException(
                     PtErrorCode.INVALID_REQUEST
             );
@@ -113,7 +116,9 @@ public class PtSessionService {
             return response(detail);
         }
 
-        var company = companies.findById(request.companyId())
+        var company = companies.findById(
+                        request.companyId()
+                )
                 .orElseThrow(() ->
                         new BusinessException(
                                 PtErrorCode.COMPANY_NOT_FOUND
@@ -130,6 +135,14 @@ public class PtSessionService {
                                 PtErrorCode.TASK_NOT_AVAILABLE
                         )
                 );
+
+        if (!task.allowsPreparationMinutes(
+                request.preparationMinutes()
+        )) {
+            throw new BusinessException(
+                    PtErrorCode.INVALID_REQUEST
+            );
+        }
 
         Instant now = clock.instant();
 
@@ -151,11 +164,15 @@ public class PtSessionService {
                 request.preparationMinutes(),
                 now,
                 user.isGuest()
-                        ? now.plus(PtInterviewRules.GUEST_RETENTION)
+                        ? now.plus(
+                        PtInterviewRules.GUEST_RETENTION
+                )
                         : null
         );
 
-        return response(details.saveAndFlush(detail));
+        return response(
+                details.saveAndFlush(detail)
+        );
     }
 
     public PtSessionResponse get(
@@ -184,7 +201,9 @@ public class PtSessionService {
         return response(detail);
     }
 
-    private PtSessionResponse response(PtSession detail) {
+    private PtSessionResponse response(
+            PtSession detail
+    ) {
         Instant now = clock.instant();
 
         if (detail.getExpiresAt() != null
@@ -208,10 +227,16 @@ public class PtSessionService {
                 task.getVersion(),
                 task.getCompany().getId(),
                 session.getCompanyName(),
-                codec.content(task.getContentJson())
+                codec.content(
+                        task.getContentJson()
+                ),
+                PtTaskSettingsResponse.from(task)
         );
 
-        var progress = PtProgressResponse.from(detail, now);
+        var progress = PtProgressResponse.from(
+                detail,
+                now
+        );
 
         return new PtSessionResponse(
                 session.getId(),
