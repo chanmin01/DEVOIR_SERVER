@@ -742,4 +742,316 @@ class PtCombinedIntegrationTest {
         assertNull(saved.getOperationKind());
         assertNull(saved.getOperationStartedAt());
     }
+
+    @Test
+    void companyTaskWithoutTrackRunsThroughAllSixQuestions() {
+        inTx(() -> {
+            var company = companies
+                    .findById(companyId)
+                    .orElseThrow();
+
+            var old = tasks.findAll()
+                    .getFirst();
+
+            tasks.saveAndFlush(
+                    PtTask.approvedExercise(
+                            company,
+                            CompanyType.BIG_TECH_SW,
+                            "NO_TRACK",
+                            old.getContentJson(),
+                            PtTaskType.JOB_PROBLEM_SOLVING,
+                            "플랫폼",
+                            List.of(),
+                            List.of(10),
+                            180
+                    )
+            );
+        });
+
+        var created = create.create(
+                userId,
+                new PtSessionCreateRequest(
+                        UUID.randomUUID(),
+                        companyId,
+                        10,
+                        "플랫폼"
+                )
+        );
+
+        assertFalse(
+                created.task()
+                        .settings()
+                        .trackSelectionRequired()
+        );
+
+        assertEquals(
+                PtNextAction.START_PRESENTATION,
+                created.nextAction()
+        );
+
+        Long id = created.sessionId();
+
+        assertEquals(
+                PtNextAction.START_PRESENTATION,
+                tx.current(userId, id)
+                        .nextAction()
+        );
+
+        progress.startPresentation(
+                userId,
+                id
+        );
+
+        assertEquals(
+                START.plusSeconds(180),
+                create.get(userId, id)
+                        .presentationDeadline()
+        );
+
+        progress.submitText(
+                userId,
+                id,
+                new PtTextPresentationRequest(
+                        UUID.randomUUID(),
+                        "원인 가설을 검증한 뒤 단계적으로 적용합니다."
+                )
+        );
+
+        for (int i = 0; i < 6; i++) {
+            var state = interview.next(
+                    userId,
+                    id
+            );
+
+            var question = state.question();
+
+            tx.submitText(
+                    userId,
+                    id,
+                    question.questionId(),
+                    new PtAnswerRequest(
+                            UUID.randomUUID(),
+                            "근거와 검증 방법을 설명합니다."
+                    )
+            );
+        }
+
+        assertEquals(
+                PtPhase.COMPLETED,
+                tx.current(userId, id)
+                        .phase()
+        );
+
+        var captor =
+                org.mockito.ArgumentCaptor.forClass(
+                        PtGenerationPlan.class
+                );
+
+        verify(
+                generator,
+                times(6)
+        ).generate(
+                captor.capture()
+        );
+
+        assertTrue(
+                captor.getAllValues()
+                        .getFirst()
+                        .context()
+                        .contains(
+                                "JOB_PROBLEM_SOLVING"
+                        )
+        );
+
+        assertTrue(
+                captor.getAllValues()
+                        .getFirst()
+                        .context()
+                        .contains(
+                                "선택 분야 없음"
+                        )
+        );
+    }
+
+    private Long presentingWithDuration(int seconds) {
+        inTx(() -> {
+            var company = companies
+                    .findById(companyId)
+                    .orElseThrow();
+
+            var old = tasks.findAll()
+                    .getFirst();
+
+            tasks.saveAndFlush(
+                    PtTask.approvedExercise(
+                            company,
+                            CompanyType.BIG_TECH_SW,
+                            "AUDIO_DURATION",
+                            old.getContentJson(),
+                            PtTaskType.JOB_PROBLEM_SOLVING,
+                            "플랫폼",
+                            List.of(),
+                            List.of(15),
+                            seconds
+                    )
+            );
+        });
+
+        Long id = create.create(
+                userId,
+                new PtSessionCreateRequest(
+                        UUID.randomUUID(),
+                        companyId,
+                        15,
+                        "플랫폼"
+                )
+        ).sessionId();
+
+        progress.startPresentation(
+                userId,
+                id
+        );
+
+        return id;
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(
+            ints = {60, 300, 600, 1800}
+    )
+    void acceptsAudioAtTaskPresentationLimit(int seconds) {
+        Long id = presentingWithDuration(seconds);
+
+        UUID request = UUID.randomUUID();
+
+        clock.now = START.plusSeconds(seconds);
+
+        var result = audio.presentation(
+                userId,
+                id,
+                request,
+                file("audio"),
+                seconds
+        );
+
+        assertEquals(
+                PtPhase.GENERATING,
+                result.phase()
+        );
+
+        assertEquals(
+                seconds,
+                details.findById(id)
+                        .orElseThrow()
+                        .getPresentationDurationSec()
+        );
+
+        verify(
+                whisper,
+                times(1)
+        ).transcribe(any());
+
+        // 같은 요청의 재전송은 마감 후에도 기존 결과를 반환한다.
+        clock.now = START.plusSeconds(
+                seconds + 3600L
+        );
+
+        var replay = audio.presentation(
+                userId,
+                id,
+                request,
+                file("audio"),
+                seconds
+        );
+
+        assertEquals(
+                result.presentation(),
+                replay.presentation()
+        );
+
+        verify(
+                whisper,
+                times(1)
+        ).transcribe(any());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(
+            ints = {60, 300, 600, 1800}
+    )
+    void rejectsAudioAboveTaskLimitBeforeSttAndAdmission(
+            int seconds
+    ) {
+        Long id = presentingWithDuration(seconds);
+
+        var error = assertThrows(
+                BusinessException.class,
+                () -> audio.presentation(
+                        userId,
+                        id,
+                        UUID.randomUUID(),
+                        file("audio"),
+                        seconds + 1
+                )
+        );
+
+        assertEquals(
+                PtErrorCode.INVALID_REQUEST,
+                error.getErrorCode()
+        );
+
+        verifyNoInteractions(whisper);
+
+        assertEquals(
+                0L,
+                receipts.count()
+        );
+
+        var saved = details.findById(id)
+                .orElseThrow();
+
+        assertNull(
+                saved.getOperationToken()
+        );
+
+        assertNull(
+                saved.getPresentationRequestId()
+        );
+
+        assertEquals(
+                PtPhase.PRESENTING,
+                saved.getPhase()
+        );
+    }
+
+    @Test
+    void answerAudioDoesNotUsePresentationDurationLimit() {
+        Long id = ready(userId);
+
+        var question = interview.next(
+                userId,
+                id
+        ).question();
+
+        var result = audio.answer(
+                userId,
+                id,
+                question.questionId(),
+                UUID.randomUUID(),
+                file("answer"),
+                600
+        );
+
+        assertEquals(
+                600,
+                result.durationSec()
+        );
+
+        verify(
+                whisper,
+                times(1)
+        ).transcribe(any());
+    }
 }
+
+
