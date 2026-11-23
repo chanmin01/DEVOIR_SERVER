@@ -6,6 +6,18 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
+import com.benly.question.entity.QuestionSourceType;
+import com.benly.question.entity.SeedQuestion;
+import com.benly.question.repository.SeedQuestionRepository;
+import com.benly.question.service.QuestionGenerationService;
+import com.benly.question.service.QuestionGenerationTx;
+import com.benly.document.repository.DocumentRepository;
+import com.benly.document.storage.S3StorageService;
+import com.benly.document.storage.PdfTextExtractor;
+import com.benly.session.entity.Session;
+
+import static org.mockito.Mockito.*;
+
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -446,6 +458,187 @@ class ClaudePromptPolicyTest {
         @Override
         public void close() {
             server.stop(0);
+        }
+    }
+
+    @Test
+    void fourValidAiQuestionsDoNotSatisfyFiveQuestionContract()
+            throws Exception {
+        try (var fake = new Fake(
+                "generate_interview_questions",
+                List.of(
+                        Map.of(
+                                "questions",
+                                List.of(
+                                        "질문1",
+                                        "질문2",
+                                        "질문3",
+                                        "질문4"
+                                )
+                        )
+                )
+        )) {
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> fake.client.generateQuestions(
+                            "SERVICE",
+                            "TECHNICAL",
+                            "백엔드",
+                            null,
+                            null
+                    )
+            );
+        }
+    }
+
+    @Test
+    void fourAiQuestionsFallBackToSeedSource()
+            throws Exception {
+        verifyGenerationSource(
+                Map.of(
+                        "questions",
+                        List.of(
+                                "질문1",
+                                "질문2",
+                                "질문3",
+                                "질문4"
+                        )
+                ),
+                QuestionSourceType.SEED_FALLBACK
+        );
+    }
+
+    @Test
+    void fiveValidAiQuestionsAreSavedAsClaudeSource()
+            throws Exception {
+        verifyGenerationSource(
+                mainInput(),
+                QuestionSourceType.CLAUDE
+        );
+    }
+
+    private void verifyGenerationSource(
+            Map<String, Object> input,
+            QuestionSourceType expectedSource
+    ) throws Exception {
+        try (var fake = new Fake(
+                "generate_interview_questions",
+                List.of(input)
+        )) {
+            var seeds = mock(
+                    SeedQuestionRepository.class
+            );
+
+            var tx = mock(
+                    QuestionGenerationTx.class
+            );
+
+            var session = mock(
+                    Session.class
+            );
+
+            when(session.getId())
+                    .thenReturn(91L);
+
+            when(session.getCompanyType())
+                    .thenReturn("SERVICE");
+
+            when(session.getStage())
+                    .thenReturn("TECHNICAL");
+
+            when(session.getJobTitle())
+                    .thenReturn("백엔드");
+
+            when(tx.markStarted(91L))
+                    .thenReturn(
+                            java.util.Optional.of(
+                                    session
+                            )
+                    );
+
+            var seedTexts = List.of(
+                    "시드1",
+                    "시드2",
+                    "시드3",
+                    "시드4",
+                    "시드5"
+            );
+
+            var seedRows = seedTexts.stream()
+                    .map(text -> {
+                        var row = mock(
+                                SeedQuestion.class
+                        );
+
+                        when(row.getContent())
+                                .thenReturn(text);
+
+                        return row;
+                    })
+                    .toList();
+
+            when(
+                    seeds.findTop5ByCompanyTypeAndStage(
+                            "SERVICE",
+                            "TECHNICAL"
+                    )
+            ).thenReturn(seedRows);
+
+            when(
+                    tx.saveQuestions(
+                            eq(91L),
+                            anyList(),
+                            eq(expectedSource)
+                    )
+            ).thenReturn(true);
+
+            var service = new QuestionGenerationService(
+                    fake.client,
+                    seeds,
+                    mock(DocumentRepository.class),
+                    mock(S3StorageService.class),
+                    mock(PdfTextExtractor.class),
+                    tx
+            );
+
+            service.generate(
+                    91L,
+                    null,
+                    null
+            );
+
+            List<String> expectedTexts =
+                    expectedSource == QuestionSourceType.CLAUDE
+                            ? ((List<?>) input.get("questions"))
+                            .stream()
+                            .map(Object::toString)
+                            .toList()
+                            : seedTexts;
+
+            verify(tx).saveQuestions(
+                    eq(91L),
+                    eq(expectedTexts),
+                    eq(expectedSource)
+            );
+
+            verify(
+                    tx,
+                    never()
+            ).markFailed(any());
+
+            if (expectedSource
+                    == QuestionSourceType.SEED_FALLBACK) {
+                verify(
+                        tx,
+                        never()
+                ).saveQuestions(
+                        any(),
+                        anyList(),
+                        eq(QuestionSourceType.CLAUDE)
+                );
+            } else {
+                verifyNoInteractions(seeds);
+            }
         }
     }
 }

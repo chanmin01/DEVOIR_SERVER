@@ -231,6 +231,8 @@ public class ClaudeClient {
             }
         }
 
+        // 일반 면접의 AI 질문은 서로 다른 유효 질문 5개를 필수로 한다.
+// 미충족 시 QuestionGenerationService가 SEED_FALLBACK으로 대체한다.
         if (result.size() != 5
                 || result.stream()
                 .distinct()

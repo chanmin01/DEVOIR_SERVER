@@ -308,7 +308,8 @@ public class PtInterviewTx {
             Long userId,
             Long sessionId,
             UUID requestId,
-            String hash
+            String hash,
+            Integer durationSec
     ) {
         if (requestId == null) {
             throw fail(
@@ -323,6 +324,17 @@ public class PtInterviewTx {
         );
 
         rejectCanceled(detail);
+
+        // 과제별 상한은 소유권 확인 및 과제 조회 후 검사한다.
+        // 전사 요청, 접수 이력 저장, 작업 확보 전에 거절한다.
+        if (durationSec == null
+                || durationSec < 1
+                || durationSec
+                > detail.getTask().getPresentationSeconds()) {
+            throw fail(
+                    PtErrorCode.INVALID_REQUEST
+            );
+        }
 
         if (detail.getPresentationRequestId() != null) {
             if (!detail.getPresentationRequestId()
