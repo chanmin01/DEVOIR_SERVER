@@ -742,4 +742,136 @@ class PtCombinedIntegrationTest {
         assertNull(saved.getOperationKind());
         assertNull(saved.getOperationStartedAt());
     }
+
+    @Test
+    void companyTaskWithoutTrackRunsThroughAllSixQuestions() {
+        inTx(() -> {
+            var company = companies
+                    .findById(companyId)
+                    .orElseThrow();
+
+            var old = tasks.findAll()
+                    .getFirst();
+
+            tasks.saveAndFlush(
+                    PtTask.approvedExercise(
+                            company,
+                            CompanyType.BIG_TECH_SW,
+                            "NO_TRACK",
+                            old.getContentJson(),
+                            PtTaskType.JOB_PROBLEM_SOLVING,
+                            "플랫폼",
+                            List.of(),
+                            List.of(10),
+                            180
+                    )
+            );
+        });
+
+        var created = create.create(
+                userId,
+                new PtSessionCreateRequest(
+                        UUID.randomUUID(),
+                        companyId,
+                        10,
+                        "플랫폼"
+                )
+        );
+
+        assertFalse(
+                created.task()
+                        .settings()
+                        .trackSelectionRequired()
+        );
+
+        assertEquals(
+                PtNextAction.START_PRESENTATION,
+                created.nextAction()
+        );
+
+        Long id = created.sessionId();
+
+        assertEquals(
+                PtNextAction.START_PRESENTATION,
+                tx.current(userId, id)
+                        .nextAction()
+        );
+
+        progress.startPresentation(
+                userId,
+                id
+        );
+
+        assertEquals(
+                START.plusSeconds(180),
+                create.get(userId, id)
+                        .presentationDeadline()
+        );
+
+        progress.submitText(
+                userId,
+                id,
+                new PtTextPresentationRequest(
+                        UUID.randomUUID(),
+                        "원인 가설을 검증한 뒤 단계적으로 적용합니다."
+                )
+        );
+
+        for (int i = 0; i < 6; i++) {
+            var state = interview.next(
+                    userId,
+                    id
+            );
+
+            var question = state.question();
+
+            tx.submitText(
+                    userId,
+                    id,
+                    question.questionId(),
+                    new PtAnswerRequest(
+                            UUID.randomUUID(),
+                            "근거와 검증 방법을 설명합니다."
+                    )
+            );
+        }
+
+        assertEquals(
+                PtPhase.COMPLETED,
+                tx.current(userId, id)
+                        .phase()
+        );
+
+        var captor =
+                org.mockito.ArgumentCaptor.forClass(
+                        PtGenerationPlan.class
+                );
+
+        verify(
+                generator,
+                times(6)
+        ).generate(
+                captor.capture()
+        );
+
+        assertTrue(
+                captor.getAllValues()
+                        .getFirst()
+                        .context()
+                        .contains(
+                                "JOB_PROBLEM_SOLVING"
+                        )
+        );
+
+        assertTrue(
+                captor.getAllValues()
+                        .getFirst()
+                        .context()
+                        .contains(
+                                "선택 분야 없음"
+                        )
+        );
+    }
 }
+
+

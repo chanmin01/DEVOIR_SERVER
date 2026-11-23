@@ -20,6 +20,7 @@ public enum PtErrorCode implements ErrorCode {
 
     INVALID_PHASE(HttpStatus.CONFLICT, "현재 PT 단계에서는 처리할 수 없습니다."),
     SESSION_NOT_IN_PROGRESS(HttpStatus.CONFLICT, "진행 중인 PT 면접이 아닙니다."),
+    TRACK_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "이 과제에서 선택할 수 없는 발표 분야입니다."),
     TRACK_REQUIRED(HttpStatus.CONFLICT, "발표 분야를 먼저 선택해주세요."),
     PRESENTATION_ALREADY_SUBMITTED(HttpStatus.CONFLICT, "발표는 이미 제출되었습니다."),
     PRESENTATION_SUBMISSION_EXPIRED(HttpStatus.CONFLICT, "발표 제출 가능 시간이 지났습니다."),
