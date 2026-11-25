@@ -82,10 +82,22 @@ class QuestionAudioServiceTest {
     }
 
     @Test
-    @DisplayName("API 키가 없으면 외부 호출 없이 TTS 실패 에러를 던진다")
-    void synthesize_withoutApiKey() {
+    @DisplayName("서비스 계정 키가 없으면 외부 호출 없이 TTS 실패 에러를 던진다")
+    void synthesize_withoutCredentials() {
         GeminiTtsClient client = new GeminiTtsClient("", "https://example.invalid", "gemini-2.5-flash-tts",
                 "Algieba", "ko-KR");
+
+        assertThatThrownBy(() -> client.synthesize(CONTENT))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(AnswerErrorCode.TTS_FAILED);
+    }
+
+    @Test
+    @DisplayName("서비스 계정 키가 잘못돼도 앱은 뜨고, 호출 시 TTS 실패 에러를 던진다")
+    void synthesize_withInvalidCredentials() {
+        GeminiTtsClient client = new GeminiTtsClient("not-a-valid-key", "https://example.invalid",
+                "gemini-2.5-flash-tts", "Algieba", "ko-KR");
 
         assertThatThrownBy(() -> client.synthesize(CONTENT))
                 .isInstanceOf(BusinessException.class)

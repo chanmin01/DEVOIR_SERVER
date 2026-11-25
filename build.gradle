@@ -52,6 +52,9 @@ dependencies {
     implementation platform("io.awspring.cloud:spring-cloud-aws-dependencies:4.0.0")
     implementation "io.awspring.cloud:spring-cloud-aws-starter-s3"
 
+    // Google Cloud 인증 (Gemini TTS 서비스 계정 토큰)
+    implementation 'com.google.auth:google-auth-library-oauth2-http:1.30.0'
+
     // Lombok
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
